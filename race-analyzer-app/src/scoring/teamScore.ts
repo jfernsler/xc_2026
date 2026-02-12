@@ -2,16 +2,24 @@ import _ from "lodash";
 import type { Rider } from "../types";
 import type { TeamScore } from "../types";
 import { REGION_MAP } from "../constants/regions";
+import { DEFAULT_MAX_PER_GENDER, DEFAULT_MAX_RIDERS, type TeamScoringOptions } from "../constants/scoring";
 import { racePoints } from "./points";
 
 type RiderWithPlace = Rider & { place: number };
 type ScoredRider = RiderWithPlace & { pts: number; effPlace: number };
 
-/** Best team score for one team: top 8, max 6 per gender, using optional overrides for place */
+const defaultOpts: TeamScoringOptions = {
+  maxRiders: DEFAULT_MAX_RIDERS,
+  maxPerGender: DEFAULT_MAX_PER_GENDER,
+};
+
+/** Best team score for one team; top maxRiders, max maxPerGender per gender; optional place overrides */
 export function computeTeamScore(
   riders: RiderWithPlace[],
-  placeOverrides?: Record<string, number>
+  placeOverrides?: Record<string, number>,
+  opts: TeamScoringOptions = defaultOpts
 ): { total: number; roster: ScoredRider[]; bc: number; gc: number } {
+  const { maxRiders, maxPerGender } = opts;
   const ov = placeOverrides ?? {};
   const scored: ScoredRider[] = riders
     .filter((r) => r.team && r.totalTime != null)
@@ -28,8 +36,8 @@ export function computeTeamScore(
     bc: 0,
     gc: 0,
   };
-  for (let nb = 0; nb <= Math.min(8, boys.length, 6); nb++) {
-    const ng = Math.min(8 - nb, girls.length, 6);
+  for (let nb = 0; nb <= Math.min(maxRiders, boys.length, maxPerGender); nb++) {
+    const ng = Math.min(maxRiders - nb, girls.length, maxPerGender);
     const pick = boys.slice(0, nb).concat(girls.slice(0, ng));
     const total = _.sumBy(pick, "pts");
     if (total > best.total) best = { total, roster: pick, bc: nb, gc: ng };
@@ -37,17 +45,18 @@ export function computeTeamScore(
   return best;
 }
 
-/** All team standings sorted by total points; uses optional place overrides (e.g. scenario) */
+/** All team standings sorted by total points; optional place overrides and scoring options */
 export function allTS(
   data: Rider[],
-  placeOverrides?: Record<string, number>
+  placeOverrides?: Record<string, number>,
+  opts: TeamScoringOptions = defaultOpts
 ): TeamScore[] {
   const ov = placeOverrides ?? {};
   const withTeam = data.filter((r) => r.team);
   const groups = _.groupBy(withTeam, "team");
   return _.sortBy(
     Object.entries(groups).map(([team, teamRiders]) => {
-      const res = computeTeamScore(teamRiders, ov);
+      const res = computeTeamScore(teamRiders, ov, opts);
       const ids = new Set(res.roster.map((r) => r.id));
       return {
         team,

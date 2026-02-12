@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import _ from "lodash";
 import type { Rider, ScenarioRider, ScenarioChange } from "./types";
 import { getSchoolLevel } from "./constants/schoolLevel";
+import { DEFAULT_MAX_PER_GENDER, DEFAULT_MAX_RIDERS } from "./constants/scoring";
 import { fetchRacesManifest, loadRaceCsv, type RaceOption } from "./utils/races";
 import { allTS } from "./scoring/teamScore";
 import { racePoints } from "./scoring/points";
@@ -26,6 +27,8 @@ export default function App() {
   const [fRace, setFRace] = useState("All");
   const [fSchool, setFSchool] = useState("All");
   const [threshold, setThreshold] = useState(30);
+  const [maxRiders, setMaxRiders] = useState(DEFAULT_MAX_RIDERS);
+  const [maxPerGender, setMaxPerGender] = useState(DEFAULT_MAX_PER_GENDER);
   const [hl, setHl] = useState<string | null>(null);
   const [sCats, setSCats] = useState<string[]>([]);
   const [sData, setSData] = useState<Record<string, ScenarioRider[]>>({});
@@ -91,13 +94,14 @@ export default function App() {
     return o;
   }, [sData]);
 
-  const tScores = useMemo(() => allTS(hsData, scenOv), [hsData, scenOv]);
+  const scoringOpts = useMemo(() => ({ maxRiders, maxPerGender }), [maxRiders, maxPerGender]);
+  const tScores = useMemo(() => allTS(hsData, scenOv, scoringOpts), [hsData, scenOv, scoringOpts]);
   const scoringIds = useMemo(() => {
     const s = new Set<string>();
     tScores.forEach((t) => t.rosterIds.forEach((id) => s.add(id)));
     return s;
   }, [tScores]);
-  const origScores = useMemo(() => allTS(hsData), [hsData]);
+  const origScores = useMemo(() => allTS(hsData, undefined, scoringOpts), [hsData, scoringOpts]);
   const origMap = useMemo(() => {
     const m: Record<string, number> = {};
     origScores.forEach((t) => { m[t.team] = t.total; });
@@ -168,8 +172,8 @@ export default function App() {
 
   const opResults = useMemo(() => {
     if (!opTarget || !opRival || opTarget === opRival) return null;
-    return findMoves(hsData, opTarget, opRival, opThreshold, sData);
-  }, [hsData, opTarget, opRival, opThreshold, sData]);
+    return findMoves(hsData, opTarget, opRival, opThreshold, sData, scoringOpts);
+  }, [hsData, opTarget, opRival, opThreshold, sData, scoringOpts]);
 
   const selectedSwing = useMemo(() => {
     if (!opResults) return 0;
@@ -292,6 +296,26 @@ export default function App() {
               />
               s
             </label>
+            <label className="text-xs text-gray-400">
+              Top:
+              <input
+                type="number"
+                min={1}
+                value={maxRiders}
+                onChange={(e) => setMaxRiders(Math.max(1, parseInt(e.target.value, 10) || 0))}
+                className="ml-1 w-10 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs"
+              />
+            </label>
+            <label className="text-xs text-gray-400">
+              Max/gender:
+              <input
+                type="number"
+                min={1}
+                value={maxPerGender}
+                onChange={(e) => setMaxPerGender(Math.max(1, parseInt(e.target.value, 10) || 0))}
+                className="ml-1 w-10 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs"
+              />
+            </label>
             <select
               value={selectedRaceId}
               onChange={handleRaceSelect}
@@ -364,7 +388,7 @@ export default function App() {
         )}
 
         {tab === "teams" && (
-          <TeamsTab tScores={tScores} fR={fR} hl={hl} teams={hsTeams} onFR={setFR} onHl={setHl} />
+          <TeamsTab tScores={tScores} fR={fR} hl={hl} teams={hsTeams} maxRiders={maxRiders} maxPerGender={maxPerGender} onFR={setFR} onHl={setHl} />
         )}
 
         {tab === "planner" && (

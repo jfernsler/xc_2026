@@ -8,11 +8,13 @@ interface TeamsTabProps {
   fR: string;
   hl: string | null;
   teams: string[];
+  maxRiders: number;
+  maxPerGender: number;
   onFR: (v: string) => void;
   onHl: (v: string | null) => void;
 }
 
-export function TeamsTab({ tScores, fR, hl, teams, onFR, onHl }: TeamsTabProps) {
+export function TeamsTab({ tScores, fR, hl, teams, maxRiders, maxPerGender, onFR, onHl }: TeamsTabProps) {
   const filtered = fR === "All" ? tScores : tScores.filter((t) => t.region === fR);
   return (
     <div>
@@ -31,7 +33,7 @@ export function TeamsTab({ tScores, fR, hl, teams, onFR, onHl }: TeamsTabProps) 
         <HLBar hl={hl} teams={teams} onHlChange={onHl} />
       </div>
       <div className="text-xs text-gray-500 mb-3">
-        Top 8/team, max 6/gender. <span className="text-emerald-400">●</span> = scoring
+        Top {maxRiders}/team, max {maxPerGender}/gender (change in header). <span className="text-emerald-400">●</span> = scoring
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {filtered.map((t, i) => {

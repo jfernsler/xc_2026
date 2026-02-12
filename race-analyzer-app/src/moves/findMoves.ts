@@ -1,5 +1,6 @@
 import _ from "lodash";
 import type { Rider, ScenarioRider, OvertakeMove, OvertakeResult } from "../types";
+import type { TeamScoringOptions } from "../constants/scoring";
 import { allTS } from "../scoring/teamScore";
 import { racePoints } from "../scoring/points";
 
@@ -18,10 +19,11 @@ export function findMoves(
   targetTeam: string,
   rivalTeam: string,
   overtakeThreshold: number,
-  scenarioData: Record<string, ScenarioRider[]>
+  scenarioData: Record<string, ScenarioRider[]>,
+  scoringOpts?: TeamScoringOptions
 ): OvertakeResult {
   const ov = scenarioOverrides(scenarioData);
-  const scores = allTS(rawData, ov);
+  const scores = allTS(rawData, ov, scoringOpts);
   const ts = scores.find((t) => t.team === targetTeam);
   const rs = scores.find((t) => t.team === rivalTeam);
   if (!ts || !rs) return { gap: 0, moves: [], tp: 0, rp2: 0 };
