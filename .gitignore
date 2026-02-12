@@ -1,0 +1,61 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / race-analyzer-app
+node_modules/
+dist/
+*.local
+.npm
+.eslintcache
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE (optional: remove .vscode if you share workspace settings)
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build / Vite
+race-analyzer-app/dist/
+*.tsbuildinfo
+.vite/
+
+# Scraper / generated output (root only; keeps public/races/*.csv)
+/full_results.csv
+/new_results.csv
+/results.csv
+/socal_results.csv
+/team_rankings.txt
+
+# Large or one-off assets (uncomment if you don’t need them in repo)
+# /2025/
+# /results/
+# /OLD/
+
+# Cursor IDE
+.cursor/
