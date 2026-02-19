@@ -33,12 +33,12 @@ export function ResultsTab({
       {Object.entries(grouped).map(([cat, riders]) => (
         <div key={cat} className="mb-6">
           <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-bold text-white">
-              {cat} <span className="text-gray-500 font-normal text-xs">({riders.length})</span>
+            <h2 className="text-sm font-bold text-slate-900">
+              {cat} <span className="text-slate-400 font-normal text-xs">({riders.length})</span>
             </h2>
             <button
               onClick={() => { onToggleCat(cat); onGoScenario(); }}
-              className="text-xs px-2 py-1 bg-purple-700 hover:bg-purple-600 rounded"
+              className="text-xs px-2 py-1 bg-purple-500 hover:bg-purple-400 text-white rounded"
             >
               🔀
             </button>
@@ -47,7 +47,7 @@ export function ResultsTab({
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-gray-500 border-b border-gray-800">
+                <tr className="text-slate-400 border-b border-slate-200">
                   <th className="py-1 px-1 text-left">P</th>
                   <th className="py-1 px-1 text-left">Name</th>
                   <th className="py-1 px-1 text-left">Team</th>
@@ -69,25 +69,25 @@ export function ResultsTab({
                   return (
                     <tr
                       key={r.id}
-                      className={"border-b border-gray-900 hover:bg-gray-900/50 " + (h ? "bg-indigo-950/40" : "")}
+                      className={"border-b border-slate-100 hover:bg-slate-100/50 " + (h ? "bg-sky-100/60" : "")}
                     >
                       <td className="py-1 px-1 font-mono">{r.place}</td>
-                      <td className={"py-1 px-1 font-medium " + (h ? "text-indigo-300 font-bold" : "")}>
+                      <td className={"py-1 px-1 font-medium " + (h ? "text-sky-600 font-bold" : "")}>
                         <ScoringDot r={r} isScoring={scoringIds.has(r.id)} />
                         {r.name}
                       </td>
-                      <td className={"py-1 px-1 max-w-32 truncate " + (h ? "text-indigo-300" : "text-gray-400")} title={r.team}>
+                      <td className={"py-1 px-1 max-w-32 truncate " + (h ? "text-sky-600" : "text-slate-500")} title={r.team}>
                         {r.team || "—"}
                       </td>
                       <td className={"py-1 px-1 text-center " + regionTextClass(r.region)}>{r.region[0]}</td>
                       <td className="py-1 px-1 text-right font-mono">{racePoints(r.place, r.category)}</td>
-                      <td className="py-1 px-1 text-right font-mono text-gray-500">{formatTime(r.lap1)}</td>
-                      <td className="py-1 px-1 text-right font-mono text-gray-500">{formatTime(r.lap2)}</td>
-                      <td className="py-1 px-1 text-right font-mono text-gray-500">{formatTime(r.lap3)}</td>
+                      <td className="py-1 px-1 text-right font-mono text-slate-400">{formatTime(r.lap1)}</td>
+                      <td className="py-1 px-1 text-right font-mono text-slate-400">{formatTime(r.lap2)}</td>
+                      <td className="py-1 px-1 text-right font-mono text-slate-400">{formatTime(r.lap3)}</td>
                       <td className="py-1 px-1 text-right font-mono font-medium">{formatTime(r.totalTime)}</td>
-                      <td className="py-1 px-1 text-right font-mono text-gray-600">
+                      <td className="py-1 px-1 text-right font-mono text-slate-400">
                         {i > 0 && pg > 0 ? (
-                          <span className={pg <= threshold ? "text-yellow-400" : ""}>{pg.toFixed(1)}s</span>
+                          <span className={pg <= threshold ? "text-amber-600" : ""}>{pg.toFixed(1)}s</span>
                         ) : (
                           ""
                         )}

@@ -281,208 +281,214 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-3" style={{ fontFamily: "system-ui,sans-serif" }}>
-      <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h1 className="text-xl font-bold text-white">🚴 Race Scenario Analyzer</h1>
-          <div className="flex items-center gap-3">
-            <label className="text-xs text-gray-400">
-              Threshold:
-              <input
-                type="number"
-                value={threshold}
-                onChange={(e) => setThreshold(parseInt(e.target.value, 10) || 0)}
-                className="ml-1 w-14 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs"
-              />
-              s
-            </label>
-            <label className="text-xs text-gray-400">
-              Top:
-              <input
-                type="number"
-                min={1}
-                value={maxRiders}
-                onChange={(e) => setMaxRiders(Math.max(1, parseInt(e.target.value, 10) || 0))}
-                className="ml-1 w-10 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs"
-              />
-            </label>
-            <label className="text-xs text-gray-400">
-              Max/gender:
-              <input
-                type="number"
-                min={1}
-                value={maxPerGender}
-                onChange={(e) => setMaxPerGender(Math.max(1, parseInt(e.target.value, 10) || 0))}
-                className="ml-1 w-10 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs"
-              />
-            </label>
-            <select
-              value={selectedRaceId}
-              onChange={handleRaceSelect}
-              disabled={loading || !raceOptions.length}
-              className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-white min-w-[280px] disabled:opacity-50"
-            >
-              <option value="">Select race…</option>
-              {raceOptions.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-            {loading && <span className="text-xs text-gray-400">Loading…</span>}
-            {loadError && <span className="text-xs text-red-400">{loadError}</span>}
-          </div>
-        </div>
+    <div className="h-screen flex flex-col bg-slate-50 text-slate-900" style={{ fontFamily: "system-ui,sans-serif" }}>
+      {/* ── Compact 40px header ── */}
+      <div className="h-10 flex items-center gap-0 px-3 bg-white border-b border-slate-200 shrink-0">
+        <span className="text-sm font-bold text-slate-900 mr-4 whitespace-nowrap shrink-0">🚴 Race Analyzer</span>
 
-        {rawData.length > 0 && (
-          <div className="flex gap-1.5 mb-3 flex-wrap">
-            {TABS.map(([k, v]) => (
-              <button
-                key={k}
-                onClick={() => setTab(k)}
-                className={"px-3 py-1 rounded text-sm font-medium transition " + (tab === k ? "bg-indigo-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700")}
-              >
-                {v}
-              </button>
+        {rawData.length > 0 && TABS.map(([k, v]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={
+              "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
+              (tab === k
+                ? "border-sky-500 text-sky-600"
+                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300")
+            }
+          >
+            {v}
+          </button>
+        ))}
+
+        <div className="ml-auto flex items-center gap-2 shrink-0 pl-4">
+          <label className="text-[11px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+            Threshold
+            <input
+              type="number"
+              value={threshold}
+              onChange={(e) => setThreshold(parseInt(e.target.value, 10) || 0)}
+              className="w-12 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
+            />
+            s
+          </label>
+          <label className="text-[11px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+            Top
+            <input
+              type="number"
+              min={1}
+              value={maxRiders}
+              onChange={(e) => setMaxRiders(Math.max(1, parseInt(e.target.value, 10) || 0))}
+              className="w-9 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
+            />
+          </label>
+          <label className="text-[11px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+            Max/G
+            <input
+              type="number"
+              min={1}
+              value={maxPerGender}
+              onChange={(e) => setMaxPerGender(Math.max(1, parseInt(e.target.value, 10) || 0))}
+              className="w-9 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
+            />
+          </label>
+          <select
+            value={selectedRaceId}
+            onChange={handleRaceSelect}
+            disabled={loading || !raceOptions.length}
+            className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
+          >
+            <option value="">Select race…</option>
+            {raceOptions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
             ))}
-          </div>
-        )}
+          </select>
+          {loading && <span className="text-[11px] text-slate-400">Loading…</span>}
+          {loadError && <span className="text-[11px] text-red-500">{loadError}</span>}
+        </div>
+      </div>
 
-        {!rawData.length && (
-          <div className="text-center py-20 text-gray-500">
-            <p className="text-lg mb-2">
-              {raceOptions.length ? "Select a race above to load results" : "Add races to public/races/ and manifest.json"}
-            </p>
-          </div>
-        )}
+      {/* ── Content area ── */}
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-7xl mx-auto px-4 py-3">
+          {!rawData.length && (
+            <div className="text-center py-20 text-slate-400">
+              <p className="text-lg mb-2">
+                {raceOptions.length ? "Select a race above to load results" : "Add races to public/races/ and manifest.json"}
+              </p>
+            </div>
+          )}
 
-        {tab === "results" && rawData.length > 0 && (
-          <div>
-            <Filters
-              regions={REGIONS}
-              teams={teams}
-              cats={cats}
-              races={races}
-              fSchool={fSchool}
-              fR={fR}
-              fT={fT}
-              fC={fC}
-              fRace={fRace}
-              hl={hl}
-              onFSchool={setFSchool}
-              onFR={setFR}
-              onFT={setFT}
-              onFC={setFC}
-              onFRace={setFRace}
-              onHl={setHl}
-            />
-            <ResultsTab
-              filtered={filtered}
-              threshold={threshold}
-              hl={hl}
+          {tab === "results" && rawData.length > 0 && (
+            <div>
+              <Filters
+                regions={REGIONS}
+                teams={teams}
+                cats={cats}
+                races={races}
+                fSchool={fSchool}
+                fR={fR}
+                fT={fT}
+                fC={fC}
+                fRace={fRace}
+                hl={hl}
+                onFSchool={setFSchool}
+                onFR={setFR}
+                onFT={setFT}
+                onFC={setFC}
+                onFRace={setFRace}
+                onHl={setHl}
+              />
+              <ResultsTab
+                filtered={filtered}
+                threshold={threshold}
+                hl={hl}
+                scoringIds={scoringIds}
+                onToggleCat={toggleCat}
+                onGoScenario={() => setTab("scenario")}
+              />
+            </div>
+          )}
+
+          {tab === "teams" && (
+            <TeamsTab tScores={tScores} fR={fR} hl={hl} teams={hsTeams} maxRiders={maxRiders} maxPerGender={maxPerGender} onFR={setFR} onHl={setHl} />
+          )}
+
+          {tab === "planner" && (
+            <PlannerTab
+              teams={hsTeams}
+              opTarget={opTarget}
+              opRival={opRival}
+              opThreshold={opThreshold}
+              selectedMoves={selectedMoves}
+              opResults={opResults}
+              selectedSwing={selectedSwing}
               scoringIds={scoringIds}
-              onToggleCat={toggleCat}
-              onGoScenario={() => setTab("scenario")}
+              setOpTarget={setOpTarget}
+              setOpRival={setOpRival}
+              setOpThreshold={setOpThreshold}
+              setHl={setHl}
+              setSelectedMoves={setSelectedMoves}
+              sendToScenario={sendToScenario}
+              generateReport={generateReport}
+              toggleMove={toggleMove}
             />
-          </div>
-        )}
+          )}
 
-        {tab === "teams" && (
-          <TeamsTab tScores={tScores} fR={fR} hl={hl} teams={hsTeams} maxRiders={maxRiders} maxPerGender={maxPerGender} onFR={setFR} onHl={setHl} />
-        )}
+          {tab === "scenario" && (
+            <div>
+              <Filters
+                regions={REGIONS}
+                teams={teams}
+                cats={cats}
+                races={races}
+                fSchool={fSchool}
+                fR={fR}
+                fT={fT}
+                fC={fC}
+                fRace={fRace}
+                hl={hl}
+                onFSchool={setFSchool}
+                onFR={setFR}
+                onFT={setFT}
+                onFC={setFC}
+                onFRace={setFRace}
+                onHl={setHl}
+              />
+              <ScenarioTab
+                cats={cats}
+                sCats={sCats}
+                sData={sData}
+                sRegion={sRegion}
+                tScores={tScores}
+                origScores={origScores}
+                origMap={origMap}
+                currentChanges={currentChanges}
+                rawData={rawData}
+                threshold={threshold}
+                hl={hl}
+                teams={teams}
+                scoringIds={scoringIds}
+                onToggleCat={toggleCat}
+                moveRider={moveRider}
+                resetScenario={resetScenario}
+                setSRegion={setSRegion}
+                setHl={setHl}
+                generateReport={generateReport}
+              />
+            </div>
+          )}
 
-        {tab === "planner" && (
-          <PlannerTab
-            teams={hsTeams}
-            opTarget={opTarget}
-            opRival={opRival}
-            opThreshold={opThreshold}
-            selectedMoves={selectedMoves}
-            opResults={opResults}
-            selectedSwing={selectedSwing}
-            scoringIds={scoringIds}
-            setOpTarget={setOpTarget}
-            setOpRival={setOpRival}
-            setOpThreshold={setOpThreshold}
-            setHl={setHl}
-            setSelectedMoves={setSelectedMoves}
-            sendToScenario={sendToScenario}
-            generateReport={generateReport}
-            toggleMove={toggleMove}
-          />
-        )}
+          {tab === "analysis" && rawData.length > 0 && (
+            <div>
+              <Filters
+                regions={REGIONS}
+                teams={teams}
+                cats={cats}
+                races={races}
+                fSchool={fSchool}
+                fR={fR}
+                fT={fT}
+                fC={fC}
+                fRace={fRace}
+                hl={hl}
+                onFSchool={setFSchool}
+                onFR={setFR}
+                onFT={setFT}
+                onFC={setFC}
+                onFRace={setFRace}
+                onHl={setHl}
+              />
+              <AnalysisTab filtered={filtered} threshold={threshold} hl={hl} scoringIds={scoringIds} />
+            </div>
+          )}
 
-        {tab === "scenario" && (
-          <div>
-            <Filters
-              regions={REGIONS}
-              teams={teams}
-              cats={cats}
-              races={races}
-              fSchool={fSchool}
-              fR={fR}
-              fT={fT}
-              fC={fC}
-              fRace={fRace}
-              hl={hl}
-              onFSchool={setFSchool}
-              onFR={setFR}
-              onFT={setFT}
-              onFC={setFC}
-              onFRace={setFRace}
-              onHl={setHl}
-            />
-            <ScenarioTab
-            cats={cats}
-            sCats={sCats}
-            sData={sData}
-            sRegion={sRegion}
-            tScores={tScores}
-            origScores={origScores}
-            origMap={origMap}
-            currentChanges={currentChanges}
-            rawData={rawData}
-            threshold={threshold}
-            hl={hl}
-            teams={teams}
-            scoringIds={scoringIds}
-            onToggleCat={toggleCat}
-            moveRider={moveRider}
-            resetScenario={resetScenario}
-            setSRegion={setSRegion}
-            setHl={setHl}
-            generateReport={generateReport}
-          />
-          </div>
-        )}
-
-        {tab === "analysis" && rawData.length > 0 && (
-          <div>
-            <Filters
-              regions={REGIONS}
-              teams={teams}
-              cats={cats}
-              races={races}
-              fSchool={fSchool}
-              fR={fR}
-              fT={fT}
-              fC={fC}
-              fRace={fRace}
-              hl={hl}
-              onFSchool={setFSchool}
-              onFR={setFR}
-              onFT={setFT}
-              onFC={setFC}
-              onFRace={setFRace}
-              onHl={setHl}
-            />
-            <AnalysisTab filtered={filtered} threshold={threshold} hl={hl} scoringIds={scoringIds} />
-          </div>
-        )}
-
-        {tab === "report" && (
-          <ReportTab reportText={reportText} onCopy={reportCopy} onDownload={reportDownload} />
-        )}
+          {tab === "report" && (
+            <ReportTab reportText={reportText} onCopy={reportCopy} onDownload={reportDownload} />
+          )}
+        </div>
       </div>
     </div>
   );

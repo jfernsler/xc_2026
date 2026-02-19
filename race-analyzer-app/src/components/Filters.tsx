@@ -43,7 +43,7 @@ export function Filters({
         <select
           value={fSchool}
           onChange={(e) => onFSchool(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+          className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
         >
           <option value="All">All Grades</option>
           <option value="High School">High School</option>
@@ -52,7 +52,7 @@ export function Filters({
         <select
           value={fR}
           onChange={(e) => onFR(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+          className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
         >
           <option value="All">All Regions</option>
           {regions.map((r) => (
@@ -64,7 +64,7 @@ export function Filters({
         <select
           value={fT}
           onChange={(e) => onFT(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+          className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
         >
           <option value="All">All Teams</option>
           {teams.map((t) => (
@@ -76,7 +76,7 @@ export function Filters({
         <select
           value={fC}
           onChange={(e) => onFC(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+          className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
         >
           <option value="All">All Categories</option>
           {cats.map((c) => (
@@ -89,7 +89,7 @@ export function Filters({
           <select
             value={fRace}
             onChange={(e) => onFRace(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white"
+            className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900"
           >
             <option value="All">All Races</option>
             {races.map((r) => (

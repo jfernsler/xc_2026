@@ -7,11 +7,11 @@ interface HLBarProps {
 export function HLBar({ hl, teams, onHlChange }: HLBarProps) {
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs text-gray-500">Highlight:</span>
+      <span className="text-xs text-slate-400">Highlight:</span>
       <select
         value={hl ?? ""}
         onChange={(e) => onHlChange(e.target.value || null)}
-        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-white max-w-48"
+        className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-xs text-slate-900 max-w-48"
       >
         <option value="">None</option>
         {teams.map((t) => (
@@ -21,11 +21,11 @@ export function HLBar({ hl, teams, onHlChange }: HLBarProps) {
         ))}
       </select>
       {hl && (
-        <button onClick={() => onHlChange(null)} className="text-xs text-gray-500 hover:text-gray-300">
+        <button onClick={() => onHlChange(null)} className="text-xs text-slate-400 hover:text-slate-700">
           ✕
         </button>
       )}
-      {hl && <span className="text-xs text-indigo-400">● {hl}</span>}
+      {hl && <span className="text-xs text-sky-500">● {hl}</span>}
     </div>
   );
 }

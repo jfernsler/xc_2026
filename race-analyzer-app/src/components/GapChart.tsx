@@ -23,19 +23,19 @@ export function GapChart({ riders, hl }: GapChartProps) {
           return (
             <div
               key={r.id}
-              className={"flex items-center gap-1 text-xs " + (h ? "bg-indigo-950/60 rounded" : "")}
+              className={"flex items-center gap-1 text-xs " + (h ? "bg-sky-50 rounded" : "")}
             >
-              <span className="w-5 text-right text-gray-600">{r.place}</span>
-              <span className={"w-24 truncate " + (h ? "text-indigo-300 font-bold" : "text-gray-400")}>
+              <span className="w-5 text-right text-slate-400">{r.place}</span>
+              <span className={"w-24 truncate " + (h ? "text-sky-600 font-bold" : "text-slate-500")}>
                 {r.name}
               </span>
-              <div className="flex-1 h-3 bg-gray-800 rounded relative">
+              <div className="flex-1 h-3 bg-slate-200 rounded relative">
                 <div
-                  className={"h-3 rounded opacity-70 " + (h ? "bg-indigo-500" : regionBarClass(r.region))}
+                  className={"h-3 rounded opacity-70 " + (h ? "bg-sky-500" : regionBarClass(r.region))}
                   style={{ width: Math.max(pct, 0.5) + "%" }}
                 />
                 <span
-                  className="absolute right-1 top-0 text-gray-500"
+                  className="absolute right-1 top-0 text-slate-400"
                   style={{ fontSize: "9px", lineHeight: "12px" }}
                 >
                   {formatDelta(gap)}

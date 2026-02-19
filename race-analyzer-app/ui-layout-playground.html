@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Race Analyzer · UI Layout Playground</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #09090b; color: #e4e4e7; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+.pg-header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid #27272a; flex-shrink: 0; }
+.pg-title { font-size: 13px; font-weight: 600; color: #71717a; letter-spacing: .06em; text-transform: uppercase; }
+.pg-badge { font-size: 11px; padding: 2px 8px; background: #1e1b4b; color: #a5b4fc; border-radius: 999px; border: 1px solid #3730a3; }
+
+.pg-body { display: flex; flex: 1; overflow: hidden; }
+
+.pg-controls { width: 252px; flex-shrink: 0; border-right: 1px solid #27272a; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 16px; }
+
+.ctrl-section { display: flex; flex-direction: column; gap: 8px; }
+.ctrl-section-title { font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #52525b; padding-bottom: 4px; border-bottom: 1px solid #27272a; }
+
+.layout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.layout-card { padding: 8px 6px; background: #18181b; border: 1px solid #3f3f46; border-radius: 5px; cursor: pointer; text-align: center; font-size: 10px; color: #71717a; transition: all .15s; line-height: 1.4; }
+.layout-card:hover { border-color: #6366f1; color: #a5b4fc; }
+.layout-card.active { border-color: #6366f1; background: #1e1b4b; color: #c7d2fe; }
+.layout-card .icon { font-size: 16px; display: block; margin-bottom: 3px; }
+
+.tab-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.tab-pill { padding: 4px 9px; border-radius: 4px; font-size: 11px; cursor: pointer; background: #18181b; border: 1px solid #3f3f46; color: #71717a; transition: all .15s; }
+.tab-pill:hover { border-color: #6366f1; color: #a5b4fc; }
+.tab-pill.active { background: #1e1b4b; border-color: #6366f1; color: #c7d2fe; }
+
+.toggle-row { display: flex; align-items: center; justify-content: space-between; }
+.toggle-label { font-size: 12px; color: #a1a1aa; }
+.toggle-wrap { position: relative; display: inline-block; width: 34px; height: 18px; cursor: pointer; }
+.toggle-wrap input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track { position: absolute; inset: 0; background: #3f3f46; border-radius: 9px; transition: .2s; }
+.toggle-thumb { position: absolute; width: 12px; height: 12px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: .2s; pointer-events: none; }
+.toggle-wrap input:checked + .toggle-track { background: #4f46e5; }
+.toggle-wrap input:checked ~ .toggle-thumb { transform: translateX(16px); }
+
+select { background: #18181b; border: 1px solid #3f3f46; color: #e4e4e7; padding: 5px 8px; border-radius: 5px; font-size: 12px; width: 100%; cursor: pointer; }
+select:focus { outline: none; border-color: #6366f1; }
+
+.preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.preset-btn { padding: 5px 8px; background: #18181b; border: 1px solid #3f3f46; color: #71717a; font-size: 10px; border-radius: 4px; cursor: pointer; text-align: center; transition: all .15s; }
+.preset-btn:hover { border-color: #6366f1; color: #a5b4fc; background: #1e1b4b; }
+
+.pg-right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#preview { flex: 1; border: none; width: 100%; }
+
+.pg-prompt { border-top: 1px solid #27272a; padding: 10px 14px; flex-shrink: 0; }
+.prompt-label { font-size: 10px; color: #52525b; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.prompt-text { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #a1a1aa; line-height: 1.6; min-height: 44px; white-space: pre-wrap; }
+.copy-btn { margin-top: 6px; padding: 5px 12px; background: #18181b; border: 1px solid #3f3f46; color: #a1a1aa; font-size: 11px; border-radius: 4px; cursor: pointer; transition: all .15s; }
+.copy-btn:hover { border-color: #6366f1; color: #c7d2fe; }
+</style>
+</head>
+<body>
+
+<div class="pg-header">
+  <span class="pg-title">Race Analyzer · UI Layout Playground</span>
+  <span class="pg-badge">Design Explorer</span>
+</div>
+
+<div class="pg-body">
+  <div class="pg-controls">
+
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Layout Variant</div>
+      <div class="layout-grid" id="layoutGrid">
+        <div class="layout-card active" data-layout="top-nav" onclick="setLayout('top-nav')">
+          <span class="icon">▬</span>Top Nav<br><span style="color:#52525b">(current)</span>
+        </div>
+        <div class="layout-card" data-layout="sidebar" onclick="setLayout('sidebar')">
+          <span class="icon">◧</span>Sidebar<br>Nav
+        </div>
+        <div class="layout-card" data-layout="dashboard" onclick="setLayout('dashboard')">
+          <span class="icon">⊞</span>Dashboard<br>Cards
+        </div>
+        <div class="layout-card" data-layout="compact" onclick="setLayout('compact')">
+          <span class="icon">▭</span>Compact<br>Header
+        </div>
+        <div class="layout-card" data-layout="split" onclick="setLayout('split')">
+          <span class="icon">◫</span>Split<br>Panel
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Preview Tab</div>
+      <div class="tab-pills" id="tabPills">
+        <div class="tab-pill active" data-tab="Results" onclick="setTab('Results')">Results</div>
+        <div class="tab-pill" data-tab="Teams" onclick="setTab('Teams')">Teams</div>
+        <div class="tab-pill" data-tab="Planner" onclick="setTab('Planner')">Planner</div>
+        <div class="tab-pill" data-tab="Scenario" onclick="setTab('Scenario')">Scenario</div>
+        <div class="tab-pill" data-tab="Analysis" onclick="setTab('Analysis')">Analysis</div>
+        <div class="tab-pill" data-tab="Report" onclick="setTab('Report')">Report</div>
+      </div>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Theme</div>
+      <div class="toggle-row">
+        <span class="toggle-label">Light Mode</span>
+        <label class="toggle-wrap">
+          <input type="checkbox" id="themeToggle" onchange="setState('theme', this.checked ? 'light' : 'dark')">
+          <div class="toggle-track"></div>
+          <div class="toggle-thumb"></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Accent Color</div>
+      <select id="accentSelect" onchange="setState('accent', this.value)">
+        <option value="indigo">Indigo (current)</option>
+        <option value="violet">Violet</option>
+        <option value="sky">Sky Blue</option>
+        <option value="emerald">Emerald</option>
+        <option value="amber">Amber</option>
+      </select>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Density</div>
+      <select id="densitySelect" onchange="setState('density', this.value)">
+        <option value="normal">Normal</option>
+        <option value="compact">Compact</option>
+        <option value="comfortable">Comfortable</option>
+      </select>
+    </div>
+
+    <div class="ctrl-section">
+      <div class="ctrl-section-title">Presets</div>
+      <div class="preset-grid">
+        <div class="preset-btn" onclick="applyPreset('current')">Current App</div>
+        <div class="preset-btn" onclick="applyPreset('sidebar')">Sidebar Dark</div>
+        <div class="preset-btn" onclick="applyPreset('dashboard')">Dashboard</div>
+        <div class="preset-btn" onclick="applyPreset('split-light')">Split Light</div>
+        <div class="preset-btn" onclick="applyPreset('compact-sky')">Compact Sky</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="pg-right">
+    <iframe id="preview"></iframe>
+    <div class="pg-prompt">
+      <div class="prompt-label">Generated Prompt — copy into Claude to implement</div>
+      <div class="prompt-text" id="promptText"></div>
+      <button class="copy-btn" onclick="copyPrompt()">Copy Prompt</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+const DEFAULTS = { layout: 'top-nav', tab: 'Results', theme: 'dark', accent: 'indigo', density: 'normal' };
+const state = { ...DEFAULTS };
+
+const PRESETS = {
+  'current':    { layout: 'top-nav',   tab: 'Results',  theme: 'dark',  accent: 'indigo',  density: 'normal' },
+  'sidebar':    { layout: 'sidebar',   tab: 'Teams',    theme: 'dark',  accent: 'violet',  density: 'normal' },
+  'dashboard':  { layout: 'dashboard', tab: 'Results',  theme: 'dark',  accent: 'indigo',  density: 'compact' },
+  'split-light':{ layout: 'split',     tab: 'Planner',  theme: 'light', accent: 'sky',     density: 'normal' },
+  'compact-sky':{ layout: 'compact',   tab: 'Results',  theme: 'dark',  accent: 'sky',     density: 'compact' },
+};
+
+function setLayout(v) { state.layout = v; updateAll(); syncControls(); }
+function setTab(v)    { state.tab    = v; updateAll(); syncControls(); }
+function setState(k, v){ state[k]   = v; updateAll(); syncControls(); }
+function applyPreset(k){ Object.assign(state, PRESETS[k]); updateAll(); syncControls(); }
+
+function syncControls() {
+  document.querySelectorAll('.layout-card').forEach(c => c.classList.toggle('active', c.dataset.layout === state.layout));
+  document.querySelectorAll('.tab-pill').forEach(p => p.classList.toggle('active', p.dataset.tab === state.tab));
+  document.getElementById('themeToggle').checked = state.theme === 'light';
+  document.getElementById('accentSelect').value = state.accent;
+  document.getElementById('densitySelect').value = state.density;
+}
+
+// ── Color Palettes ────────────────────────────────────────────────────────────
+const ACCENTS = {
+  indigo:  { a600:'#4f46e5', a400:'#818cf8', a200:'#c7d2fe', a950:'#1e1b4b', a900:'#312e81' },
+  violet:  { a600:'#7c3aed', a400:'#a78bfa', a200:'#ddd6fe', a950:'#2e1065', a900:'#4c1d95' },
+  sky:     { a600:'#0284c7', a400:'#38bdf8', a200:'#bae6fd', a950:'#082f49', a900:'#0c4a6e' },
+  emerald: { a600:'#059669', a400:'#34d399', a200:'#a7f3d0', a950:'#022c22', a900:'#064e3b' },
+  amber:   { a600:'#d97706', a400:'#fbbf24', a200:'#fde68a', a950:'#451a03', a900:'#78350f' },
+};
+
+function getTheme(isDark, accent) {
+  const a = ACCENTS[accent];
+  if (isDark) return {
+    bg:'#030712', bgPanel:'#0a0f1e', bgCard:'#0f1a2e', bgRow:'#0a0f1e', bgRowAlt:'#0d1424',
+    border:'#1e293b', borderStrong:'#334155',
+    text:'#f1f5f9', textMuted:'#475569', textSub:'#64748b',
+    accent:a.a600, accentLight:a.a400, accentFaint:a.a950, accentText:a.a200,
+    yellow:'#ca8a04', yellowBg:'rgba(161,98,7,0.2)',
+    red:'#f87171', redBg:'rgba(239,68,68,0.12)',
+    green:'#4ade80', greenBg:'rgba(74,222,128,0.1)',
+    purple:'#c084fc',
+  };
+  return {
+    bg:'#f8fafc', bgPanel:'#ffffff', bgCard:'#f1f5f9', bgRow:'#ffffff', bgRowAlt:'#f8fafc',
+    border:'#e2e8f0', borderStrong:'#cbd5e1',
+    text:'#0f172a', textMuted:'#94a3b8', textSub:'#64748b',
+    accent:a.a600, accentLight:a.a600, accentFaint:'#eff6ff', accentText:a.a600,
+    yellow:'#92400e', yellowBg:'rgba(245,158,11,0.12)',
+    red:'#dc2626', redBg:'rgba(239,68,68,0.08)',
+    green:'#15803d', greenBg:'rgba(34,197,94,0.08)',
+    purple:'#7e22ce',
+  };
+}
+
+// ── Mock Data ─────────────────────────────────────────────────────────────────
+const RIDERS = [
+  { pl:1,  name:'Jake Morrison',  team:'Tahoe Summit',  region:'N',  pts:100, l1:'12:34', l2:'13:01', total:'25:35', gap:'—',      score:true  },
+  { pl:2,  name:'Eli Chen',       team:'Sierra Riders', region:'C',  pts:95,  l1:'12:41', l2:'13:10', total:'25:51', gap:'+0:16',  score:true  },
+  { pl:3,  name:'Marcus Webb',    team:'Valley Velo',   region:'S',  pts:90,  l1:'12:45', l2:'13:22', total:'26:07', gap:'+0:32',  score:true  },
+  { pl:4,  name:'Theo Park',      team:'Tahoe Summit',  region:'N',  pts:86,  l1:'12:50', l2:'13:29', total:'26:19', gap:'+0:44',  score:false },
+  { pl:5,  name:'Sam Okafor',     team:'Ridge Riders',  region:'N',  pts:82,  l1:'13:02', l2:'13:30', total:'26:32', gap:'+0:57',  score:true  },
+  { pl:6,  name:'Alex Rivera',    team:'Sierra Riders', region:'C',  pts:79,  l1:'13:05', l2:'13:41', total:'26:46', gap:'+1:11',  score:false },
+  { pl:7,  name:'Owen Sturt',     team:'Valley Velo',   region:'S',  pts:76,  l1:'13:08', l2:'13:55', total:'27:03', gap:'+1:28',  score:true  },
+  { pl:8,  name:'Cole Bauer',     team:'Crest Cycling', region:'C',  pts:74,  l1:'13:14', l2:'14:02', total:'27:16', gap:'+1:41',  score:false },
+];
+
+const TEAMS = [
+  { rank:1, name:'Tahoe Summit',  region:'North',   score:382, boys:3, girls:2,
+    riders:[{n:'J. Morrison',c:'VB-A',p:1,g:'M'},{n:'T. Park',c:'VB-A',p:4,g:'M'},{n:'L. Hayes',c:'JV-A',p:9,g:'M'},{n:'A. Kim',c:'VG-A',p:3,g:'F'},{n:'B. Torres',c:'VG-A',p:7,g:'F'}] },
+  { rank:2, name:'Sierra Riders', region:'Central', score:367, boys:4, girls:1,
+    riders:[{n:'E. Chen',c:'VB-A',p:2,g:'M'},{n:'A. Rivera',c:'VB-A',p:6,g:'M'},{n:'D. Patel',c:'JV-A',p:10,g:'M'},{n:'R. Scott',c:'JV-A',p:12,g:'M'},{n:'M. Jones',c:'VG-A',p:5,g:'F'}] },
+  { rank:3, name:'Valley Velo',   region:'South',   score:344, boys:2, girls:3,
+    riders:[{n:'M. Webb',c:'VB-A',p:3,g:'M'},{n:'O. Sturt',c:'VB-A',p:7,g:'M'},{n:'C. Diaz',c:'VG-A',p:2,g:'F'},{n:'P. Flynn',c:'VG-A',p:6,g:'F'},{n:'N. Cruz',c:'JV-G',p:4,g:'F'}] },
+];
+
+const MOVES = [
+  { cat:'VB-A', rider:'Eli Chen',    from:2, to:1, time:'+0:16', gain:5, loss:4, swing:9,  eff:'High' },
+  { cat:'VB-A', rider:'Alex Rivera', from:6, to:5, time:'+1:11', gain:3, loss:2, swing:5,  eff:'High' },
+  { cat:'JV-A', rider:'Raj Patel',   from:10,to:8, time:'+2:44', gain:4, loss:3, swing:7,  eff:'Med'  },
+  { cat:'JV-A', rider:'D. Okonkwo',  from:14,to:12,time:'+4:12', gain:2, loss:1, swing:3,  eff:'Low'  },
+  { cat:'MS-B', rider:'T. Nguyen',   from:3, to:2, time:'+0:38', gain:3, loss:2, swing:5,  eff:'High' },
+];
+
+const ALL_TABS = ['Results','Teams','Planner','Scenario','Analysis','Report'];
+
+// ── Tab Content Builders ──────────────────────────────────────────────────────
+function buildResultsContent(T, density) {
+  const rPy = density === 'compact' ? '2px' : density === 'comfortable' ? '9px' : '5px';
+  const fs = density === 'compact' ? '11px' : '12px';
+
+  const rows = RIDERS.map((r, i) => {
+    const within = r.gap !== '—' && r.gap < '+1:00';
+    const bg = i % 2 === 0 ? T.bgRow : T.bgRowAlt;
+    return `<tr style="background:${bg}">
+      <td style="padding:${rPy} 8px;color:${T.textSub};font-family:monospace;font-size:${fs}">${r.pl}</td>
+      <td style="padding:${rPy} 8px;color:${T.text};font-size:${fs}">
+        ${r.name}${r.score ? ` <span style="display:inline-block;width:5px;height:5px;background:${T.green};border-radius:50%;vertical-align:middle;margin-left:3px"></span>` : ''}
+      </td>
+      <td style="padding:${rPy} 8px;color:${T.textSub};font-size:${fs}">${r.team}</td>
+      <td style="padding:${rPy} 4px;font-size:10px"><span style="padding:1px 6px;border-radius:3px;background:${T.bgCard};color:${T.textSub};border:1px solid ${T.border}">${r.region}</span></td>
+      <td style="padding:${rPy} 8px;color:${T.accentLight};font-family:monospace;font-size:${fs};text-align:right">${r.pts}</td>
+      <td style="padding:${rPy} 8px;color:${T.textSub};font-family:monospace;font-size:${fs}">${r.l1}</td>
+      <td style="padding:${rPy} 8px;color:${T.textSub};font-family:monospace;font-size:${fs}">${r.l2}</td>
+      <td style="padding:${rPy} 8px;color:${T.text};font-family:monospace;font-size:${fs};font-weight:600">${r.total}</td>
+      <td style="padding:${rPy} 8px;color:${within ? T.yellow : T.textSub};font-family:monospace;font-size:${fs};background:${within ? T.yellowBg : 'transparent'}">${r.gap}</td>
+    </tr>`;
+  }).join('');
+
+  const gapBars = RIDERS.map((r, i) => {
+    const w = Math.max(6, Math.round((1 - i * 0.11) * 72));
+    const within = r.gap !== '—' && r.gap < '+1:00';
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="width:${w}px;height:8px;background:${within ? T.yellow : T.accent};border-radius:2px;opacity:${0.95 - i * 0.08}"></div>
+      <span style="font-size:9px;color:${T.textMuted};font-family:monospace">${r.pl}</span>
+    </div>`;
+  }).join('');
+
+  const thCss = `padding:5px 8px;text-align:left;color:${T.textMuted};font-weight:500;font-size:10px;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid ${T.border}`;
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:600;color:${T.text}">Varsity Boys A</span>
+        <span style="font-size:11px;color:${T.textSub};background:${T.bgCard};border:1px solid ${T.border};padding:2px 8px;border-radius:999px">8 riders</span>
+      </div>
+      <button style="font-size:11px;padding:4px 10px;background:${T.accentFaint};color:${T.accentText};border:1px solid ${T.accent};border-radius:4px;cursor:pointer">→ Scenario</button>
+    </div>
+    <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;align-items:center;gap:6px">
+      <span style="font-size:10px;color:${T.textMuted};width:56px;flex-shrink:0">Gap Chart</span>
+      <div style="display:flex;gap:4px;align-items:flex-end">${gapBars}</div>
+      <span style="font-size:10px;color:${T.textMuted};margin-left:auto">30s threshold</span>
+    </div>
+    <div style="border:1px solid ${T.border};border-radius:6px;overflow:hidden">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:${T.bgCard}">
+          <th style="${thCss}">Pl</th>
+          <th style="${thCss}">Name</th>
+          <th style="${thCss}">Team</th>
+          <th style="${thCss}">Rgn</th>
+          <th style="${thCss};text-align:right">Pts</th>
+          <th style="${thCss}">Lap 1</th>
+          <th style="${thCss}">Lap 2</th>
+          <th style="${thCss}">Total</th>
+          <th style="${thCss}">Gap</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function buildTeamsContent(T, density) {
+  const cards = TEAMS.map(t => {
+    const riderRows = t.riders.map(r =>
+      `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid ${T.border}">
+        <span style="width:6px;height:6px;border-radius:50%;background:${r.g==='F' ? '#f472b6' : '#38bdf8'};flex-shrink:0"></span>
+        <span style="font-size:11px;color:${T.textSub};flex:1">${r.n}</span>
+        <span style="font-size:10px;color:${T.textMuted};font-family:monospace">${r.c}</span>
+        <span style="font-size:11px;color:${T.accentLight};font-family:monospace">P${r.p}</span>
+      </div>`
+    ).join('');
+    return `<div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:8px;padding:12px;cursor:pointer">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:${T.text}">${t.name}</div>
+          <div style="font-size:11px;color:${T.textMuted}">${t.region}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:22px;font-weight:700;color:${t.rank===1?T.green:t.rank===2?T.yellow:T.text};font-family:monospace">${t.score}</div>
+          <div style="font-size:10px;color:${T.textMuted}">#${t.rank}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <span style="font-size:10px;padding:2px 7px;background:rgba(56,189,248,0.12);color:#38bdf8;border-radius:999px">♂ ${t.boys}</span>
+        <span style="font-size:10px;padding:2px 7px;background:rgba(244,114,182,0.12);color:#f472b6;border-radius:999px">♀ ${t.girls}</span>
+        <span style="font-size:10px;padding:2px 7px;background:${T.accentFaint};color:${T.accentText};border-radius:999px">${t.boys+t.girls} riders</span>
+      </div>
+      <div>${riderRows}</div>
+    </div>`;
+  }).join('');
+  return `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">${cards}</div>`;
+}
+
+function buildPlannerContent(T, density) {
+  const rPy = density === 'compact' ? '3px' : '6px';
+  const rows = MOVES.map((m, i) => {
+    const hi = m.eff === 'High';
+    const bg = i % 2 === 0 ? T.bgRow : T.bgRowAlt;
+    return `<tr style="background:${bg}">
+      <td style="padding:${rPy} 8px;color:${hi ? T.yellow : T.textMuted};font-size:14px">○</td>
+      <td style="padding:${rPy} 8px;color:${T.textSub};font-size:11px;font-family:monospace">${m.cat}</td>
+      <td style="padding:${rPy} 8px;color:${T.text};font-size:12px">${m.rider}</td>
+      <td style="padding:${rPy} 8px;color:${T.accentLight};font-family:monospace;font-size:12px">P${m.from}→P${m.to}</td>
+      <td style="padding:${rPy} 8px;color:${hi?T.yellow:T.textSub};font-family:monospace;font-size:12px;background:${hi?T.yellowBg:'transparent'}">${m.time}</td>
+      <td style="padding:${rPy} 8px;color:${T.green};font-family:monospace;font-size:12px">+${m.gain}</td>
+      <td style="padding:${rPy} 8px;color:${T.red};font-family:monospace;font-size:12px">−${m.loss}</td>
+      <td style="padding:${rPy} 8px;color:${T.text};font-family:monospace;font-size:12px;font-weight:600">+${m.swing}</td>
+      <td style="padding:${rPy} 8px"><span style="font-size:10px;padding:1px 7px;border-radius:999px;background:${hi?'rgba(74,222,128,0.12)':'rgba(100,116,139,0.15)'};color:${hi?T.green:T.textSub}">${m.eff}</span></td>
+    </tr>`;
+  }).join('');
+  const thCss = `padding:5px 8px;text-align:left;color:${T.textMuted};font-size:10px;font-weight:500;letter-spacing:.05em;text-transform:uppercase`;
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+      ${[['Sierra Riders','367',T.red,'−15 pts'],['Tahoe Summit','382',T.green,'+15 pts'],['Selected Swing','+0',T.accentLight,'0 moves']].map(([l,v,c,s])=>`
+      <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:10px 12px">
+        <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${l}</div>
+        <div style="font-size:22px;font-weight:700;color:${c};font-family:monospace">${v}</div>
+        <div style="font-size:11px;color:${T.textMuted}">${s}</div>
+      </div>`).join('')}
+    </div>
+    <div style="border:1px solid ${T.border};border-radius:6px;overflow:hidden;margin-bottom:10px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:${T.bgCard}">
+          ${['','Cat','Rider','Move','Time','Gain','Loss','Swing','Eff'].map(h=>`<th style="${thCss}">${h}</th>`).join('')}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:10px 14px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:11px;color:${T.textSub}">Cumulative Impact</span>
+        <span style="font-size:11px;font-family:monospace;color:${T.textMuted}">0 / 15 pts needed</span>
+      </div>
+      <div style="height:8px;background:${T.border};border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:0%;background:${T.accent};border-radius:4px"></div>
+      </div>
+    </div>`;
+}
+
+function buildScenarioContent(T, density) {
+  const cats = ['Varsity A','Varsity B','JV A','JV B','MS Boys','MS Girls'];
+  const regions = ['All','North','Central','South'];
+  return `
+    <div style="display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap">
+      ${cats.map((c,i)=>`<button style="padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid ${i<2?T.accent:T.border};background:${i<2?T.accentFaint:'transparent'};color:${i<2?T.accentText:T.textSub}">${c}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:5px;margin-bottom:14px">
+      ${regions.map((r,i)=>`<button style="padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;border:1px solid ${i===0?T.borderStrong:T.border};background:${i===0?T.bgCard:'transparent'};color:${i===0?T.text:T.textSub}">${r}</button>`).join('')}
+    </div>
+    <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:12px">
+      <div style="font-size:12px;font-weight:600;color:${T.text};margin-bottom:8px">Varsity Boys A — Drag to reorder</div>
+      ${RIDERS.slice(0,5).map(r=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid ${T.border};cursor:grab">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:12px;color:${T.textMuted};font-family:monospace;width:16px">${r.pl}</span>
+          <span style="font-size:12px;color:${T.text}">${r.name}</span>
+          <span style="font-size:11px;color:${T.textMuted}">${r.team}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;color:${T.textSub};font-family:monospace">${r.total}</span>
+          <button style="padding:2px 8px;font-size:11px;background:rgba(192,132,252,0.15);color:${T.purple};border:1px solid rgba(192,132,252,0.3);border-radius:4px;cursor:pointer">Move</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+}
+
+function buildAnalysisContent(T, density) {
+  const metrics = [['Avg Gap Top 5','0:47','within 30s threshold',T.yellow],['Score Delta','+15 pts','Tahoe leads',T.green],['Threshold Riders','3','riders within 30s',T.accentLight]];
+  const cats = ['VB-A','VG-A','JV-A'];
+  return `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+      ${metrics.map(([l,v,s,c])=>`
+      <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:12px">
+        <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${l}</div>
+        <div style="font-size:22px;font-weight:700;color:${c};font-family:monospace">${v}</div>
+        <div style="font-size:11px;color:${T.textMuted}">${s}</div>
+      </div>`).join('')}
+    </div>
+    <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:12px">
+      <div style="font-size:12px;font-weight:600;color:${T.text};margin-bottom:10px">Gap Distribution by Category</div>
+      ${cats.map((c,ci)=>{
+        const times = ['12:34','12:48','13:02','13:22'];
+        const widths = [80,60,40,20];
+        return `<div style="margin-bottom:10px">
+          <div style="font-size:11px;color:${T.textSub};margin-bottom:5px">${c}</div>
+          <div style="display:flex;gap:3px;align-items:center">
+            ${times.map((t,i)=>`
+            <div style="position:relative;height:20px;width:${widths[i]}px;background:${i===0?T.accent:i===1?T.accentFaint:T.bgCard};border:1px solid ${i<2?T.accent:T.border};border-radius:3px;display:flex;align-items:center;padding:0 4px">
+              <span style="font-size:9px;color:${i<2?T.accentText:T.textMuted};font-family:monospace;white-space:nowrap">${t}</span>
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function buildReportContent(T, density) {
+  const md = `# Race Report — Folsom XC 2026
+
+## Team Standings
+
+| Rank | Team          | Score | Delta |
+|------|---------------|-------|-------|
+| 1    | Tahoe Summit  | 382   | —     |
+| 2    | Sierra Riders | 367   | −15   |
+| 3    | Valley Velo   | 344   | −38   |
+
+## Key Findings
+
+- **Tahoe Summit** leads by **15 points** heading into finals
+- **3 riders** are within the 30-second overtake threshold
+- Varsity Boys A is the most impactful category
+
+## Scenario Analysis
+
+Selected moves could swing **+9 pts** toward Sierra Riders,
+closing the gap to 6 points.`;
+  return `
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button style="padding:5px 12px;font-size:12px;background:${T.accentFaint};color:${T.accentText};border:1px solid ${T.accent};border-radius:4px;cursor:pointer">Copy Markdown</button>
+      <button style="padding:5px 12px;font-size:12px;background:${T.bgCard};color:${T.textSub};border:1px solid ${T.border};border-radius:4px;cursor:pointer">Download .md</button>
+    </div>
+    <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:16px;font-family:monospace;font-size:12px;color:${T.text};line-height:1.8;white-space:pre-wrap">${md}</div>`;
+}
+
+function buildTabContent(tab, T, density) {
+  if (tab === 'Results')  return buildResultsContent(T, density);
+  if (tab === 'Teams')    return buildTeamsContent(T, density);
+  if (tab === 'Planner')  return buildPlannerContent(T, density);
+  if (tab === 'Scenario') return buildScenarioContent(T, density);
+  if (tab === 'Analysis') return buildAnalysisContent(T, density);
+  if (tab === 'Report')   return buildReportContent(T, density);
+  return '';
+}
+
+// ── Layout Builders ───────────────────────────────────────────────────────────
+function hTabs(T, active) {
+  return ALL_TABS.map(t => {
+    const on = t === active;
+    return `<div style="padding:8px 14px;font-size:12px;font-weight:${on?'600':'400'};color:${on?T.accent:T.textSub};border-bottom:2px solid ${on?T.accent:'transparent'};cursor:pointer;white-space:nowrap">${t}</div>`;
+  }).join('');
+}
+
+function vTabs(T, active) {
+  return ALL_TABS.map(t => {
+    const on = t === active;
+    return `<div style="display:flex;align-items:center;padding:7px 10px;border-radius:5px;margin-bottom:2px;cursor:pointer;background:${on?T.accentFaint:'transparent'};color:${on?T.accentText:T.textSub};font-size:12px;font-weight:${on?'600':'400'}">${t}</div>`;
+  }).join('');
+}
+
+function controls(T, style) {
+  const items = [['Race','Folsom XC 2026'],['Top N','5'],['Threshold','30s'],['Gender','All']];
+  if (style === 'row') {
+    return items.map(([l,v])=>`<div style="display:flex;align-items:center;gap:4px">
+      <span style="font-size:10px;color:${T.textMuted}">${l}</span>
+      <select style="background:${T.bgCard};border:1px solid ${T.border};color:${T.text};padding:3px 6px;border-radius:4px;font-size:11px"><option>${v}</option></select>
+    </div>`).join('');
+  }
+  return items.map(([l,v])=>`<div style="margin-bottom:9px">
+    <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${l}</div>
+    <select style="width:100%;background:${T.bgCard};border:1px solid ${T.border};color:${T.text};padding:5px 8px;border-radius:4px;font-size:12px"><option>${v}</option></select>
+  </div>`).join('');
+}
+
+function buildLayout(layout, content, T, density) {
+  const pad = density === 'compact' ? '10px 12px' : density === 'comfortable' ? '20px' : '14px 16px';
+  const hdr = `background:${T.bgPanel};border-bottom:1px solid ${T.border}`;
+
+  if (layout === 'top-nav') return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;${hdr}">
+      <span style="font-size:15px;font-weight:700;color:${T.text}">🚴 Race Scenario Analyzer</span>
+      <div style="display:flex;align-items:center;gap:10px">${controls(T,'row')}</div>
+    </div>
+    <div style="display:flex;gap:0;padding:0 16px;${hdr}">${hTabs(T, state.tab)}</div>
+    <div style="padding:${pad};overflow:auto;flex:1">${content}</div>`;
+
+  if (layout === 'sidebar') return `
+    <div style="display:flex;height:100%;overflow:hidden">
+      <div style="width:176px;flex-shrink:0;${hdr};border-right:1px solid ${T.border};border-bottom:none;display:flex;flex-direction:column;padding:12px;overflow-y:auto">
+        <div style="font-size:13px;font-weight:700;color:${T.text};margin-bottom:14px">🚴 Race Analyzer</div>
+        <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Views</div>
+        ${vTabs(T, state.tab)}
+        <div style="margin-top:auto;padding-top:12px;border-top:1px solid ${T.border}">
+          <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Filters</div>
+          ${controls(T,'col')}
+        </div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:8px 16px;${hdr};display:flex;align-items:center;justify-content:space-between">
+          <span style="font-size:13px;font-weight:600;color:${T.text}">${state.tab}</span>
+          <span style="font-size:11px;color:${T.textMuted}">Folsom XC 2026</span>
+        </div>
+        <div style="padding:${pad};overflow:auto;flex:1">${content}</div>
+      </div>
+    </div>`;
+
+  if (layout === 'dashboard') {
+    const summCards = [['Finishers','48','6 categories',T.text],['Leader','Tahoe','382 pts',T.green],['Gap','15 pts','Tahoe leads',T.yellow],['Threshold','3 riders','within 30s',T.accentLight]].map(([l,v,s,c])=>`
+    <div style="background:${T.bgCard};border:1px solid ${T.border};border-radius:6px;padding:10px 12px">
+      <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">${l}</div>
+      <div style="font-size:18px;font-weight:700;color:${c};font-family:monospace">${v}</div>
+      <div style="font-size:11px;color:${T.textMuted}">${s}</div>
+    </div>`).join('');
+    return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;${hdr}">
+      <span style="font-size:15px;font-weight:700;color:${T.text}">🚴 Race Scenario Analyzer</span>
+      <div style="display:flex;gap:10px">${controls(T,'row')}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:10px 16px;background:${T.bg}">${summCards}</div>
+    <div style="display:flex;padding:0 16px;background:${T.bgPanel};border-bottom:1px solid ${T.border};border-top:1px solid ${T.border}">${hTabs(T, state.tab)}</div>
+    <div style="padding:${pad};overflow:auto;flex:1">${content}</div>`;
+  }
+
+  if (layout === 'compact') return `
+    <div style="display:flex;align-items:center;gap:0;padding:0 12px;${hdr};height:40px;flex-shrink:0">
+      <span style="font-size:13px;font-weight:700;color:${T.text};margin-right:14px;white-space:nowrap">🚴 RaceAnalyzer</span>
+      ${ALL_TABS.map(t => {
+        const on = t === state.tab;
+        return `<div style="padding:0 11px;height:40px;display:flex;align-items:center;font-size:12px;font-weight:${on?'600':'400'};color:${on?T.accent:T.textSub};border-bottom:2px solid ${on?T.accent:'transparent'};cursor:pointer;white-space:nowrap">${t}</div>`;
+      }).join('')}
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">${controls(T,'row')}</div>
+    </div>
+    <div style="padding:${pad};overflow:auto;flex:1">${content}</div>`;
+
+  if (layout === 'split') return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;${hdr}">
+      <span style="font-size:14px;font-weight:700;color:${T.text}">🚴 Race Scenario Analyzer</span>
+      <span style="font-size:11px;color:${T.textMuted}">Folsom XC 2026</span>
+    </div>
+    <div style="display:flex;flex:1;overflow:hidden">
+      <div style="width:192px;flex-shrink:0;${hdr};border-right:1px solid ${T.border};border-bottom:none;padding:12px;overflow-y:auto">
+        <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Filters</div>
+        ${controls(T,'col')}
+        <div style="border-top:1px solid ${T.border};margin:10px 0"></div>
+        <div style="font-size:10px;color:${T.textMuted};text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Views</div>
+        ${ALL_TABS.map(t=>{
+          const on = t === state.tab;
+          return `<div style="padding:6px 10px;border-radius:4px;font-size:12px;cursor:pointer;background:${on?T.accentFaint:'transparent'};color:${on?T.accentText:T.textSub};margin-bottom:2px;font-weight:${on?'600':'400'}">${t}</div>`;
+        }).join('')}
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="padding:6px 14px;${hdr};display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;font-weight:600;color:${T.text}">${state.tab}</span>
+          <span style="font-size:11px;color:${T.textMuted}">/ Varsity Boys A</span>
+        </div>
+        <div style="padding:${pad};overflow:auto;flex:1">${content}</div>
+      </div>
+    </div>`;
+
+  return `<div style="padding:${pad}">${content}</div>`;
+}
+
+// ── Preview Renderer ──────────────────────────────────────────────────────────
+function renderPreview() {
+  const T = getTheme(state.theme === 'light', state.accent);
+  const content = buildTabContent(state.tab, T, state.density);
+  const body = buildLayout(state.layout, content, T, state.density);
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; background: ${T.bg}; color: ${T.text}; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+select { -webkit-appearance: none; appearance: none; }
+</style></head><body>${body}</body></html>`;
+  document.getElementById('preview').srcdoc = html;
+}
+
+// ── Prompt Builder ────────────────────────────────────────────────────────────
+function updatePrompt() {
+  const LAYOUT_DESC = {
+    'top-nav':   'top navigation bar with controls on the right (current layout)',
+    'sidebar':   'left sidebar (176px) with vertical tab navigation and filters at the bottom',
+    'dashboard': 'dashboard layout — header, then a row of 4 summary metric cards, then horizontal tabs, then content',
+    'compact':   'single compact 40px header bar combining the app title, all 6 tab links, and the global controls inline',
+    'split':     'two-panel split — 192px left panel with filters and tab links, right panel with sub-header and content',
+  };
+  const parts = [];
+  if (state.layout === 'top-nav') {
+    parts.push(`Keep the current top-nav layout (header with controls on the right, horizontal tab bar below).`);
+  } else {
+    parts.push(`Redesign the app shell to use a ${LAYOUT_DESC[state.layout]}.`);
+    const details = {
+      'sidebar':   'Move the Race, Top N, Threshold, and Gender controls into the bottom of the sidebar as compact column selects. The 6 tab links (Results, Teams, Planner, Scenario, Analysis, Report) become vertical nav items in the sidebar.',
+      'dashboard': 'Add a summary stat bar between the header and tabs showing 4 metric cards: Total Finishers, Leading Team name, Score Delta (pts), and Threshold Riders count.',
+      'compact':   'All navigation and controls fit in one 40px bar. No secondary rows. Controls use font-size 11px compact selects.',
+      'split':     'Left panel shows all filter controls (Race, Top N, Threshold, Gender) as column selects plus the tab navigation list. Main panel has a breadcrumb-style sub-header showing current tab / current category.',
+    }[state.layout];
+    if (details) parts.push(details);
+  }
+  if (state.theme === 'light') parts.push(`Switch to a light color scheme: bg-white / bg-slate-50 surfaces, slate-900 text, slate-200 borders.`);
+  if (state.accent !== 'indigo') {
+    const names = { violet:'violet-600', sky:'sky-500', emerald:'emerald-600', amber:'amber-600' };
+    parts.push(`Replace the indigo accent with ${names[state.accent]} for active tabs, buttons, and highlights.`);
+  }
+  const densityDesc = { compact:'Use compact density: 2–3px vertical row padding, 11px base font, tighter section gaps.', comfortable:'Use comfortable density: 9–10px vertical row padding, more section whitespace.', normal:null }[state.density];
+  if (densityDesc) parts.push(densityDesc);
+  parts.push(`(Previewing the ${state.tab} tab.)`);
+  document.getElementById('promptText').textContent = parts.join('\n\n');
+}
+
+function copyPrompt() {
+  navigator.clipboard.writeText(document.getElementById('promptText').textContent).then(() => {
+    const btn = document.querySelector('.copy-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy Prompt', 1500);
+  });
+}
+
+function updateAll() { renderPreview(); updatePrompt(); }
+
+updateAll();
+</script>
+</body>
+</html>

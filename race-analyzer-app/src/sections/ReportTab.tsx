@@ -7,7 +7,7 @@ interface ReportTabProps {
 export function ReportTab({ reportText, onCopy, onDownload }: ReportTabProps) {
   if (!reportText) {
     return (
-      <div className="text-center py-10 text-gray-500">
+      <div className="text-center py-10 text-slate-400">
         Run a scenario or overtake plan, then generate report
       </div>
     );
@@ -15,15 +15,15 @@ export function ReportTab({ reportText, onCopy, onDownload }: ReportTabProps) {
   return (
     <div>
       <div className="flex gap-2 mb-3">
-        <button onClick={onCopy} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-sm">
+        <button onClick={onCopy} className="px-3 py-1.5 bg-sky-500 hover:bg-sky-400 text-white rounded text-sm">
           📋 Copy
         </button>
-        <button onClick={onDownload} className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-sm">
+        <button onClick={onDownload} className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-sm">
           💾 Download
         </button>
       </div>
       <pre
-        className="bg-gray-900 border border-gray-800 rounded p-4 text-xs text-gray-300 whitespace-pre-wrap overflow-auto"
+        className="bg-slate-50 border border-slate-200 rounded p-4 text-xs text-slate-700 whitespace-pre-wrap overflow-auto"
         style={{ maxHeight: "70vh" }}
       >
         {reportText}
