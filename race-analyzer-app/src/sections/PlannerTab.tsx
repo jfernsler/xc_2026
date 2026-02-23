@@ -1,7 +1,8 @@
-import type { OvertakeResult } from "../types";
+import type { OvertakeResult, TeamScore } from "../types";
 
 interface PlannerTabProps {
   teams: string[];
+  tScores: TeamScore[];
   opTarget: string;
   opRival: string;
   opThreshold: number;
@@ -25,6 +26,7 @@ function isSc(riderId: string, scoringIds: Set<string>) {
 
 export function PlannerTab({
   teams,
+  tScores,
   opTarget,
   opRival,
   opThreshold,
@@ -41,13 +43,20 @@ export function PlannerTab({
   generateReport,
   toggleMove,
 }: PlannerTabProps) {
+  const teamRankOrder = tScores.map((t) => t.team);
+  const targetRank = opTarget ? teamRankOrder.indexOf(opTarget) : -1;
+  const teamsAhead = targetRank > 0 ? teamRankOrder.slice(0, targetRank) : [];
+  const teamsOther = opTarget
+    ? teamRankOrder.filter((t) => t !== opTarget && !teamsAhead.includes(t))
+    : teams.slice();
+
   return (
     <div>
-      <div className="bg-white rounded border border-slate-200 p-4 mb-4">
-        <h2 className="text-sm font-bold text-slate-900 mb-3">🎯 Overtake Planner</h2>
+      <div className="bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-600 p-4 mb-4">
+        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3">🎯 Overtake Planner</h2>
         <div className="flex gap-3 flex-wrap items-end mb-3">
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Your Team</label>
+            <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Your Team</label>
             <select
               value={opTarget}
               onChange={(e) => {
@@ -55,7 +64,7 @@ export function PlannerTab({
                 setHl(e.target.value || null);
                 setSelectedMoves(new Set());
               }}
-              className="bg-slate-100 border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-900 min-w-48"
+              className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1.5 text-xs text-slate-900 min-w-48"
             >
               <option value="">Select...</option>
               {teams.map((t) => (
@@ -64,28 +73,48 @@ export function PlannerTab({
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Rival Team</label>
+            <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Rival Team</label>
             <select
               value={opRival}
               onChange={(e) => { setOpRival(e.target.value); setSelectedMoves(new Set()); }}
-              className="bg-slate-100 border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-900 min-w-48"
+              className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1.5 text-xs text-slate-900 min-w-48"
             >
               <option value="">Select...</option>
-              {teams.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
+              {opTarget ? (
+                <>
+                  {teamsAhead.length > 0 && (
+                    <optgroup label="── Ahead of you ──">
+                      {teamsAhead.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {teamsAhead.length > 0 && teamsOther.length > 0 && <option disabled>────────────</option>}
+                  {teamsOther.length > 0 && (
+                    <optgroup label="Other teams">
+                      {teamsOther.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              ) : (
+                teams.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))
+              )}
             </select>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Overtake Threshold</label>
+            <label className="text-xs text-slate-500 dark:text-slate-400 block mb-1">Overtake Threshold</label>
             <div className="flex items-center gap-1">
               <input
                 type="number"
                 value={opThreshold}
                 onChange={(e) => setOpThreshold(parseInt(e.target.value, 10) || 0)}
-                className="w-16 bg-slate-100 border border-slate-200 rounded px-2 py-1.5 text-xs text-slate-900"
+                className="w-16 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1.5 text-xs text-slate-900"
               />
-              <span className="text-xs text-slate-400">s</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500">s</span>
             </div>
           </div>
         </div>
@@ -95,44 +124,44 @@ export function PlannerTab({
             <div
               className={
                 "flex items-center gap-4 p-3 rounded mb-4 " +
-                (opResults.gap > 0 ? "bg-red-50 border border-red-200" : "bg-emerald-50 border border-emerald-200")
+                (opResults.gap > 0 ? "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800" : "bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800")
               }
             >
               <div>
-                <div className="text-xs text-slate-500">Point Gap</div>
-                <div className={"text-2xl font-bold " + (opResults.gap > 0 ? "text-red-500" : "text-emerald-600")}>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Point Gap</div>
+                <div className={"text-2xl font-bold " + (opResults.gap > 0 ? "text-red-500 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400")}>
                   {opResults.gap > 0 ? "-" : "+"}
                   {Math.abs(opResults.gap)}
                 </div>
               </div>
               <div className="text-xs space-y-1">
                 <div>
-                  <span className="text-sky-600">{opTarget}</span>:{" "}
+                  <span className="text-sky-600 dark:text-sky-400">{opTarget}</span>:{" "}
                   <span className="font-mono font-bold">{opResults.tp}</span>
                 </div>
                 <div>
-                  <span className="text-red-500">{opRival}</span>:{" "}
+                  <span className="text-red-500 dark:text-red-400">{opRival}</span>:{" "}
                   <span className="font-mono font-bold">{opResults.rp2}</span>
                 </div>
               </div>
               {selectedMoves.size > 0 && (
                 <div className="ml-auto text-right">
-                  <div className="text-xs text-slate-500">Selected swing</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">Selected swing</div>
                   <div
                     className={
                       "text-xl font-bold " +
-                      (selectedSwing >= opResults.gap && opResults.gap > 0 ? "text-emerald-600" : "text-amber-600")
+                      (selectedSwing >= opResults.gap && opResults.gap > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")
                     }
                   >
                     +{selectedSwing}
                   </div>
                   {selectedSwing >= opResults.gap && opResults.gap > 0 && (
-                    <div className="text-emerald-600 text-xs font-bold">✓ OVERTAKE</div>
+                    <div className="text-emerald-600 dark:text-emerald-400 text-xs font-bold">✓ OVERTAKE</div>
                   )}
                 </div>
               )}
               {opResults.gap <= 0 && (
-                <div className="text-emerald-600 text-sm font-bold ml-auto">✓ Already ahead!</div>
+                <div className="text-emerald-600 dark:text-emerald-400 text-sm font-bold ml-auto">✓ Already ahead!</div>
               )}
             </div>
 
@@ -161,13 +190,13 @@ export function PlannerTab({
 
             {opResults.moves.length > 0 && (
               <div>
-                <div className="text-xs text-slate-400 mb-2" style={{ fontSize: "10px" }}>
+                <div className="text-xs text-slate-400 dark:text-slate-500 mb-2" style={{ fontSize: "10px" }}>
                   Click rows to select. <span className="text-emerald-500">●</span> scoring{" "}
-                  <span className="text-amber-600 ml-2">⚡</span> within {opThreshold}s
+                  <span className="text-amber-600 dark:text-amber-400 ml-2">⚡</span> within {opThreshold}s
                 </div>
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-slate-400 border-b border-slate-200">
+                    <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
                       <th className="py-1 px-1 w-6"></th>
                       <th className="py-1 px-1 text-left">Category</th>
                       <th className="py-1 px-1 text-left">Rider</th>
@@ -189,22 +218,22 @@ export function PlannerTab({
                           key={i}
                           onClick={() => toggleMove(i)}
                           className={
-                            "border-b border-slate-100 cursor-pointer transition " +
-                            (sel ? "bg-sky-100/80 border-l-2 border-sky-400" : dimmed ? "opacity-30" : "hover:bg-slate-100/50")
+                            "border-b border-slate-100 dark:border-slate-700 cursor-pointer transition " +
+                            (sel ? "bg-sky-100/80 dark:bg-sky-900/30 border-l-2 border-sky-400 dark:border-sky-500" : dimmed ? "opacity-30" : "hover:bg-slate-100/50 dark:hover:bg-slate-700/50")
                           }
                         >
                           <td className="py-1 px-1 text-center">
-                            {sel ? <span className="text-sky-500">✓</span> : <span className="text-slate-300">○</span>}
+                            {sel ? <span className="text-sky-500 dark:text-sky-400">✓</span> : <span className="text-slate-300 dark:text-slate-600">○</span>}
                           </td>
-                          <td className="py-1 px-1 text-slate-700">{m.cat}</td>
+                          <td className="py-1 px-1 text-slate-700 dark:text-slate-300">{m.cat}</td>
                           <td className="py-1 px-1">
                             {isSc(m.rider.id, scoringIds) && (
                               <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-0.5" />
                             )}
                             <span className="text-sky-600">{m.rider.name}</span>
                             {m.type === "overtake_rival" && (
-                              <span className="text-slate-400 ml-1">
-                                →<span className="text-red-500 ml-0.5">{m.target.name}</span>
+                              <span className="text-slate-400 dark:text-slate-500 ml-1">
+                                →<span className="text-red-500 dark:text-red-400 ml-0.5">{m.target.name}</span>
                               </span>
                             )}
                           </td>
@@ -212,17 +241,17 @@ export function PlannerTab({
                           <td
                             className={
                               "py-1 px-1 text-right font-mono " +
-                              (m.withinThreshold ? "text-amber-600 font-bold" : "text-slate-400")
+                              (m.withinThreshold ? "text-amber-600 dark:text-amber-400 font-bold" : "text-slate-400 dark:text-slate-500")
                             }
                           >
                             {m.timeNeeded.toFixed(1)}s{m.withinThreshold ? " ⚡" : ""}
                           </td>
-                          <td className="py-1 px-1 text-right font-mono text-emerald-600">+{m.gain}</td>
-                          <td className="py-1 px-1 text-right font-mono text-red-500">
+                          <td className="py-1 px-1 text-right font-mono text-emerald-600 dark:text-emerald-400">+{m.gain}</td>
+                          <td className="py-1 px-1 text-right font-mono text-red-500 dark:text-red-400">
                             {m.rivalLoss > 0 ? "-" + m.rivalLoss : "0"}
                           </td>
-                          <td className="py-1 px-1 text-right font-mono font-bold text-slate-900">{m.netSwing}</td>
-                          <td className="py-1 px-1 text-right font-mono text-slate-400">{m.efficiency.toFixed(1)}</td>
+                          <td className="py-1 px-1 text-right font-mono font-bold text-slate-900 dark:text-slate-100">{m.netSwing}</td>
+                          <td className="py-1 px-1 text-right font-mono text-slate-400 dark:text-slate-500">{m.efficiency.toFixed(1)}</td>
                         </tr>
                       );
                     })}
@@ -230,8 +259,8 @@ export function PlannerTab({
                 </table>
 
                 {selectedMoves.size > 0 && (
-                  <div className="mt-4 bg-slate-100/50 rounded p-3">
-                    <h3 className="text-xs font-bold text-slate-700 mb-2">Selected Moves Impact</h3>
+                  <div className="mt-4 bg-slate-100/50 dark:bg-slate-700/50 rounded p-3">
+                    <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Selected Moves Impact</h3>
                     <div className="space-y-1">
                       {(() => {
                         let cum = 0;
@@ -242,11 +271,11 @@ export function PlannerTab({
                           return (
                             <div
                               key={i}
-                              className={"flex items-center gap-2 text-xs " + (ot ? "bg-emerald-50 rounded p-1" : "")}
+                              className={"flex items-center gap-2 text-xs " + (ot ? "bg-emerald-50 dark:bg-emerald-900/20 rounded p-1" : "")}
                             >
-                              <span className="w-24 truncate">{m.rider.name}</span>
-                              <span className="font-mono text-slate-400 w-12">{m.timeNeeded.toFixed(1)}s</span>
-                              <div className="flex-1 h-3 bg-slate-200 rounded relative">
+                              <span className="w-24 truncate dark:text-slate-200">{m.rider.name}</span>
+                              <span className="font-mono text-slate-400 dark:text-slate-500 w-12">{m.timeNeeded.toFixed(1)}s</span>
+                              <div className="flex-1 h-3 bg-slate-200 dark:bg-slate-600 rounded relative">
                                 <div
                                   className={"h-3 rounded " + (cum >= opResults.gap ? "bg-emerald-500" : "bg-sky-500")}
                                   style={{
@@ -254,13 +283,13 @@ export function PlannerTab({
                                   }}
                                 />
                               </div>
-                              <span className="font-mono font-bold w-10 text-right">
+                              <span className="font-mono font-bold w-10 text-right dark:text-slate-100">
                                 {cum >= 0 ? "+" : ""}
                                 {cum}
                               </span>
-                              <span className="text-slate-400 w-10 text-right">/{opResults.gap}</span>
+                              <span className="text-slate-400 dark:text-slate-500 w-10 text-right">/{opResults.gap}</span>
                               {ot && (
-                                <span className="text-emerald-600 font-bold" style={{ fontSize: "10px" }}>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold" style={{ fontSize: "10px" }}>
                                   ✓
                                 </span>
                               )}
@@ -275,7 +304,7 @@ export function PlannerTab({
             )}
 
             {opResults.moves.length === 0 && opResults.gap > 0 && (
-              <div className="text-center py-6 text-slate-400">
+              <div className="text-center py-6 text-slate-400 dark:text-slate-500">
                 No moves found within {opThreshold}s. Try increasing the overtake threshold.
               </div>
             )}

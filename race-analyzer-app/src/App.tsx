@@ -42,6 +42,22 @@ export default function App() {
   const [selectedRaceId, setSelectedRaceId] = useState<string>("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [lastSentCategories, setLastSentCategories] = useState<string[]>([]);
+  const [darkMode, setDarkMode] = useState(() => {
+    try {
+      const stored = localStorage.getItem("race-analyzer-dark");
+      return stored !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
+    try {
+      localStorage.setItem("race-analyzer-dark", String(darkMode));
+    } catch {}
+  }, [darkMode]);
 
   useEffect(() => {
     fetchRacesManifest()
@@ -141,6 +157,7 @@ export default function App() {
   const resetScenario = () => {
     setSCats([]);
     setSData({});
+    setLastSentCategories([]);
   };
 
   const currentChanges = useMemo((): ScenarioChange[] => {
@@ -201,6 +218,7 @@ export default function App() {
       if (!catMoves[m.cat]) catMoves[m.cat] = [];
       catMoves[m.cat].push(m);
     });
+    const sentCats = Object.keys(catMoves);
     let newSData = { ...sData };
     const newSCats = sCats.slice();
     Object.entries(catMoves).forEach(([cat, moves]) => {
@@ -230,6 +248,8 @@ export default function App() {
       });
       newSData[cat] = catRiders;
     });
+    setLastSentCategories(sentCats);
+    if (sentCats.length > 0) setFC(sentCats[0]!);
     setSCats(newSCats);
     setSData(newSData);
     setTab("scenario");
@@ -281,10 +301,19 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50 text-slate-900" style={{ fontFamily: "system-ui,sans-serif" }}>
+    <div className="h-screen flex flex-col bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100" style={{ fontFamily: "system-ui,sans-serif" }}>
       {/* ── Compact 40px header ── */}
-      <div className="h-10 flex items-center gap-0 px-3 bg-white border-b border-slate-200 shrink-0">
-        <span className="text-sm font-bold text-slate-900 mr-4 whitespace-nowrap shrink-0">🚴 Race Analyzer</span>
+      <div className="h-10 flex items-center gap-0 px-3 bg-white border-b border-slate-200 dark:bg-slate-800 dark:border-slate-700 shrink-0">
+        <span className="text-sm font-bold text-slate-900 dark:text-slate-100 mr-4 whitespace-nowrap shrink-0">🚴 Race Analyzer</span>
+
+        <button
+          type="button"
+          onClick={() => setDarkMode((d) => !d)}
+          className="mr-2 p-1.5 rounded border border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 text-xs"
+          title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {darkMode ? "☀️" : "🌙"}
+        </button>
 
         {rawData.length > 0 && TABS.map(([k, v]) => (
           <button
@@ -293,8 +322,8 @@ export default function App() {
             className={
               "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
               (tab === k
-                ? "border-sky-500 text-sky-600"
-                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300")
+                ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
+                : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
             }
           >
             {v}
@@ -302,41 +331,41 @@ export default function App() {
         ))}
 
         <div className="ml-auto flex items-center gap-2 shrink-0 pl-4">
-          <label className="text-[11px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+          <label className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 whitespace-nowrap">
             Threshold
             <input
               type="number"
               value={threshold}
               onChange={(e) => setThreshold(parseInt(e.target.value, 10) || 0)}
-              className="w-12 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
+              className="w-12 bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
             />
             s
           </label>
-          <label className="text-[11px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+          <label className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 whitespace-nowrap">
             Top
             <input
               type="number"
               min={1}
               value={maxRiders}
               onChange={(e) => setMaxRiders(Math.max(1, parseInt(e.target.value, 10) || 0))}
-              className="w-9 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
+              className="w-9 bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
             />
           </label>
-          <label className="text-[11px] text-slate-500 flex items-center gap-1 whitespace-nowrap">
+          <label className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 whitespace-nowrap">
             Max/G
             <input
               type="number"
               min={1}
               value={maxPerGender}
               onChange={(e) => setMaxPerGender(Math.max(1, parseInt(e.target.value, 10) || 0))}
-              className="w-9 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
+              className="w-9 bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
             />
           </label>
           <select
             value={selectedRaceId}
             onChange={handleRaceSelect}
             disabled={loading || !raceOptions.length}
-            className="bg-slate-100 border border-slate-200 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
+            className="bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
           >
             <option value="">Select race…</option>
             {raceOptions.map((r) => (
@@ -345,8 +374,8 @@ export default function App() {
               </option>
             ))}
           </select>
-          {loading && <span className="text-[11px] text-slate-400">Loading…</span>}
-          {loadError && <span className="text-[11px] text-red-500">{loadError}</span>}
+          {loading && <span className="text-[11px] text-slate-400 dark:text-slate-500">Loading…</span>}
+          {loadError && <span className="text-[11px] text-red-500 dark:text-red-400">{loadError}</span>}
         </div>
       </div>
 
@@ -354,7 +383,7 @@ export default function App() {
       <div className="flex-1 overflow-auto">
         <div className="max-w-7xl mx-auto px-4 py-3">
           {!rawData.length && (
-            <div className="text-center py-20 text-slate-400">
+            <div className="text-center py-20 text-slate-400 dark:text-slate-500">
               <p className="text-lg mb-2">
                 {raceOptions.length ? "Select a race above to load results" : "Add races to public/races/ and manifest.json"}
               </p>
@@ -393,12 +422,26 @@ export default function App() {
           )}
 
           {tab === "teams" && (
-            <TeamsTab tScores={tScores} fR={fR} hl={hl} teams={hsTeams} maxRiders={maxRiders} maxPerGender={maxPerGender} onFR={setFR} onHl={setHl} />
+            <TeamsTab
+              tScores={tScores}
+              fR={fR}
+              hl={hl}
+              teams={hsTeams}
+              maxRiders={maxRiders}
+              maxPerGender={maxPerGender}
+              onFR={setFR}
+              onHl={setHl}
+              onSelectTeam={(team) => {
+                setHl(team);
+                setOpTarget(team);
+              }}
+            />
           )}
 
           {tab === "planner" && (
             <PlannerTab
               teams={hsTeams}
+              tScores={tScores}
               opTarget={opTarget}
               opRival={opRival}
               opThreshold={opThreshold}
@@ -451,6 +494,7 @@ export default function App() {
                 hl={hl}
                 teams={teams}
                 scoringIds={scoringIds}
+                lastSentCategories={lastSentCategories}
                 onToggleCat={toggleCat}
                 moveRider={moveRider}
                 resetScenario={resetScenario}
