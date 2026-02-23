@@ -37,10 +37,30 @@ class RaceResultScraper:
         
         return self.config
     
-    def get_results_raw(self, list_name: str = "02 - Result Lists|01-Individual Results - ALL") -> dict:
-        """Fetch raw results data from API."""
+    def get_results_raw(self, list_name: str = None) -> dict:
+        """Fetch raw results data from API. If list_name is None, uses first available list from config."""
         if not self.key:
             self.get_config()
+        
+        if list_name is None:
+            lists = self.config.get("lists", [])
+            # Normalize: config may have list of strings or list of dicts with name/listname
+            list_names = []
+            for item in lists:
+                if isinstance(item, str):
+                    list_names.append(item)
+                elif isinstance(item, dict):
+                    list_names.append(item.get("Name") or item.get("name") or item.get("listname") or str(item))
+            if not list_names:
+                list_name = "02 - Result Lists|01-Individual Results - ALL"  # fallback
+            else:
+                list_name = None
+                for name in list_names:
+                    if "Individual" in name or "ALL" in name or "Results" in name:
+                        list_name = name
+                        break
+                if list_name is None:
+                    list_name = list_names[0]
         
         url = f"https://{self.server}/{self.event_id}/RRPublish/data/list"
         params = {
@@ -172,7 +192,7 @@ def scrape_event(event_id: int, output_file: str = None) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Example usage
-    EVENT_ID = 376410
+    EVENT_ID = 383847
     
     df = scrape_event(EVENT_ID, output_file="socal_results.csv")
     
