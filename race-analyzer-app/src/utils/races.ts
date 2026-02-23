@@ -95,3 +95,10 @@ export async function loadRaceCsv(race: RaceOption): Promise<Rider[]> {
   const rows = parseSocalCsv(text);
   return csvRowsToRiders(rows, race.id);
 }
+
+/** Load all races from manifest and return concatenated riders (multi-race data). */
+export async function loadAllRaces(races: RaceOption[]): Promise<Rider[]> {
+  if (!races.length) return [];
+  const results = await Promise.all(races.map((r) => loadRaceCsv(r)));
+  return results.flat();
+}

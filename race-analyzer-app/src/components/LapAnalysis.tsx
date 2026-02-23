@@ -33,39 +33,39 @@ export function LapAnalysis({ riders, hl }: LapAnalysisProps) {
     (r) => -r.split
   ).slice(0, 4);
   const HN = (r: Rider) => (
-    <span className={"w-24 truncate " + (hl && r.team === hl ? "text-sky-600 font-bold" : "")}>
+    <span className={"w-24 truncate " + (hl && r.team === hl ? "text-sky-600 dark:text-sky-400 font-bold" : "text-slate-700 dark:text-slate-200")}>
       {r.name}
     </span>
   );
   return (
     <div className="mt-2 space-y-2 text-xs">
       <div>
-        <div className="font-semibold text-slate-400 mb-0.5">🎯 Consistent</div>
+        <div className="font-semibold text-slate-400 dark:text-slate-500 mb-0.5">🎯 Consistent</div>
         {tight.map((r, i) => (
           <div key={i} className="flex gap-2">
-            <span className="text-slate-400 w-4">{i + 1}.</span>
+            <span className="text-slate-400 dark:text-slate-500 w-4">{i + 1}.</span>
             {HN(r)}
-            <span className="text-slate-400">±{r.variance.toFixed(1)}s</span>
+            <span className="text-slate-400 dark:text-slate-500">±{r.variance.toFixed(1)}s</span>
           </div>
         ))}
       </div>
       <div>
-        <div className="font-semibold text-slate-400 mb-0.5">📉 Fade</div>
+        <div className="font-semibold text-slate-400 dark:text-slate-500 mb-0.5">📉 Fade</div>
         {fade.map((r, i) => (
           <div key={i} className="flex gap-2">
-            <span className="text-slate-400 w-4">{i + 1}.</span>
+            <span className="text-slate-400 dark:text-slate-500 w-4">{i + 1}.</span>
             {HN(r)}
-            <span className="text-red-500">+{formatTime(r.fade)}</span>
+            <span className="text-red-500 dark:text-red-400">+{formatTime(r.fade)}</span>
           </div>
         ))}
       </div>
       <div>
-        <div className="font-semibold text-slate-400 mb-0.5">📈 Neg Split</div>
+        <div className="font-semibold text-slate-400 dark:text-slate-500 mb-0.5">📈 Neg Split</div>
         {neg.map((r, i) => (
           <div key={i} className="flex gap-2">
-            <span className="text-slate-400 w-4">{i + 1}.</span>
+            <span className="text-slate-400 dark:text-slate-500 w-4">{i + 1}.</span>
             {HN(r)}
-            <span className="text-emerald-600">-{formatTime(r.split)}</span>
+            <span className="text-emerald-600 dark:text-emerald-400">-{formatTime(r.split)}</span>
           </div>
         ))}
       </div>

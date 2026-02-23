@@ -3,11 +3,11 @@ import _ from "lodash";
 import type { Rider, ScenarioRider, ScenarioChange } from "./types";
 import { getSchoolLevel } from "./constants/schoolLevel";
 import { DEFAULT_MAX_PER_GENDER, DEFAULT_MAX_RIDERS } from "./constants/scoring";
-import { fetchRacesManifest, loadRaceCsv, type RaceOption } from "./utils/races";
+import { fetchRacesManifest, loadRaceCsv, loadAllRaces, type RaceOption } from "./utils/races";
 import { allTS } from "./scoring/teamScore";
 import { racePoints } from "./scoring/points";
 import { findMoves } from "./moves/findMoves";
-import { TABS } from "./constants/tabs";
+import { TABS, CUMULATIVE_TABS } from "./constants/tabs";
 import { Filters } from "./components/Filters";
 import { ResultsTab } from "./sections/ResultsTab";
 import { TeamsTab } from "./sections/TeamsTab";
@@ -15,6 +15,8 @@ import { PlannerTab } from "./sections/PlannerTab";
 import { ScenarioTab } from "./sections/ScenarioTab";
 import { AnalysisTab } from "./sections/AnalysisTab";
 import { ReportTab } from "./sections/ReportTab";
+import { CumulativeTeamsTab, type CumulativeTeamRow } from "./sections/CumulativeTeamsTab";
+import { PlacementOverTimeTab } from "./sections/PlacementOverTimeTab";
 
 const REGIONS = ["North", "Central", "South", "Other"];
 
@@ -77,11 +79,27 @@ export default function App() {
       .finally(() => setLoading(false));
   };
 
+  const loadAll = () => {
+    setLoadError(null);
+    setLoading(true);
+    loadAllRaces(raceOptions)
+      .then((riders) => {
+        setRawData(riders);
+        setTab("results");
+      })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load all races"))
+      .finally(() => setLoading(false));
+  };
+
   const handleRaceSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     setSelectedRaceId(id);
-    const race = raceOptions.find((r) => String(r.id) === id);
-    if (race) loadRace(race);
+    if (id === "all") {
+      loadAll();
+    } else {
+      const race = raceOptions.find((r) => String(r.id) === id);
+      if (race) loadRace(race);
+    }
   };
 
   const hsData = useMemo(() => rawData.filter((r) => getSchoolLevel(r) === "hs"), [rawData]);
@@ -123,6 +141,23 @@ export default function App() {
     origScores.forEach((t) => { m[t.team] = t.total; });
     return m;
   }, [origScores]);
+
+  const cumulativeTeamRows = useMemo((): CumulativeTeamRow[] => {
+    if (races.length < 2) return [];
+    const byRace = _.groupBy(hsData, "race");
+    const raceIds = _.sortBy(Object.keys(byRace).map(Number));
+    const teamMap: Record<string, { team: string; region: string; total: number; byRace: Record<number, number> }> = {};
+    raceIds.forEach((raceId) => {
+      const riders = byRace[String(raceId)] ?? [];
+      const ts = allTS(riders, undefined, scoringOpts);
+      ts.forEach((t) => {
+        if (!teamMap[t.team]) teamMap[t.team] = { team: t.team, region: t.region, total: 0, byRace: {} };
+        teamMap[t.team].total += t.total;
+        teamMap[t.team].byRace[raceId] = t.total;
+      });
+    });
+    return _.sortBy(Object.values(teamMap), (r) => -r.total);
+  }, [hsData, races.length, scoringOpts]);
 
   const toggleCat = (cat: string) => {
     if (sCats.includes(cat)) {
@@ -315,20 +350,43 @@ export default function App() {
           {darkMode ? "☀️" : "🌙"}
         </button>
 
-        {rawData.length > 0 && TABS.map(([k, v]) => (
-          <button
-            key={k}
-            onClick={() => setTab(k)}
-            className={
-              "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
-              (tab === k
-                ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
-                : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
-            }
-          >
-            {v}
-          </button>
-        ))}
+        {rawData.length > 0 && (
+          <>
+            {TABS.map(([k, v]) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={
+                  "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
+                  (tab === k
+                    ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
+                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
+                }
+              >
+                {v}
+              </button>
+            ))}
+            {races.length > 1 && (
+              <>
+                <span className="px-2 h-6 border-l border-slate-300 dark:border-slate-600 self-center" aria-hidden />
+                {CUMULATIVE_TABS.map(([k, v]) => (
+                  <button
+                    key={k}
+                    onClick={() => setTab(k)}
+                    className={
+                      "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
+                      (tab === k
+                        ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
+                        : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
+                    }
+                  >
+                    {v}
+                  </button>
+                ))}
+              </>
+            )}
+          </>
+        )}
 
         <div className="ml-auto flex items-center gap-2 shrink-0 pl-4">
           <label className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 whitespace-nowrap">
@@ -368,6 +426,9 @@ export default function App() {
             className="bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
           >
             <option value="">Select race…</option>
+            {raceOptions.length > 1 && (
+              <option value="all">All races (cumulative)</option>
+            )}
             {raceOptions.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
@@ -531,6 +592,40 @@ export default function App() {
 
           {tab === "report" && (
             <ReportTab reportText={reportText} onCopy={reportCopy} onDownload={reportDownload} />
+          )}
+
+          {tab === "cumulative-teams" && races.length > 1 && (
+            <CumulativeTeamsTab
+              rows={cumulativeTeamRows}
+              raceOptions={raceOptions}
+              fR={fR}
+              hl={hl}
+              teams={hsTeams}
+              onFR={setFR}
+              onHl={setHl}
+            />
+          )}
+
+          {tab === "placement" && races.length > 1 && (
+            <PlacementOverTimeTab
+              filtered={filtered}
+              races={races}
+              raceOptions={raceOptions}
+              fR={fR}
+              fT={fT}
+              fC={fC}
+              fRace={fRace}
+              fSchool={fSchool}
+              teams={teams}
+              cats={cats}
+              hl={hl}
+              onFR={setFR}
+              onFT={setFT}
+              onFC={setFC}
+              onFRace={setFRace}
+              onFSchool={setFSchool}
+              onHl={setHl}
+            />
           )}
         </div>
       </div>

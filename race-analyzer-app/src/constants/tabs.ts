@@ -6,3 +6,9 @@ export const TABS: [string, string][] = [
   ["analysis", "📈 Analysis"],
   ["report", "📋 Report"],
 ];
+
+/** Shown after a divider when multiple races are loaded */
+export const CUMULATIVE_TABS: [string, string][] = [
+  ["cumulative-teams", "📊 Cumulative Teams"],
+  ["placement", "📈 Placement over time"],
+];

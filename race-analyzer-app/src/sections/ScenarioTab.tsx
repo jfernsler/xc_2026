@@ -187,7 +187,7 @@ export function ScenarioTab({
                       <span className="text-slate-400 dark:text-slate-500">[{c.cat.split(" ")[0]}]</span>
                       <span>{c.name}</span>
                       <span className="text-slate-400 dark:text-slate-500">P{c.from}→P{c.to}</span>
-                      <span className={c.delta > 0 ? "text-emerald-600" : c.delta < 0 ? "text-red-500" : "text-slate-400"}>
+                      <span className={c.delta > 0 ? "text-emerald-600 dark:text-emerald-400" : c.delta < 0 ? "text-red-500 dark:text-red-400" : "text-slate-400 dark:text-slate-500"}>
                         {c.delta > 0 ? "+" : ""}
                         {c.delta}pts
                       </span>
@@ -258,14 +258,14 @@ export function ScenarioTab({
                                 <button
                                   onClick={() => moveRider(cat, i, -1)}
                                   disabled={i === 0}
-                                  className="px-0.5 hover:text-slate-900 disabled:text-slate-200 text-slate-400"
+                                  className="px-0.5 hover:text-slate-900 dark:hover:text-slate-100 disabled:text-slate-200 dark:disabled:text-slate-600 text-slate-400 dark:text-slate-500"
                                 >
                                   ▲
                                 </button>
                                 <button
                                   onClick={() => moveRider(cat, i, 1)}
                                   disabled={i === riders.length - 1}
-                                  className="px-0.5 hover:text-slate-900 disabled:text-slate-200 text-slate-400"
+                                  className="px-0.5 hover:text-slate-900 dark:hover:text-slate-100 disabled:text-slate-200 dark:disabled:text-slate-600 text-slate-400 dark:text-slate-500"
                                 >
                                   ▼
                                 </button>

@@ -33,7 +33,7 @@ export function AnalysisTab({ filtered, threshold, hl, scoringIds }: AnalysisTab
   const grouped = _.groupBy(filtered, "categoryRaw");
   const entries = Object.entries(grouped);
   if (!entries.length) {
-    return <div className="text-center py-10 text-slate-400">No data matches filters.</div>;
+    return <div className="text-center py-10 text-slate-400 dark:text-slate-500">No data matches filters.</div>;
   }
   return (
     <>
@@ -57,43 +57,43 @@ export function AnalysisTab({ filtered, threshold, hl, scoringIds }: AnalysisTab
           }
         }
         return (
-          <div key={cat} className="mb-5 bg-white rounded p-3 border border-slate-200">
-            <h2 className="text-sm font-bold text-slate-900 mb-2">{cat}</h2>
+          <div key={cat} className="mb-5 bg-white dark:bg-slate-800 rounded p-3 border border-slate-200 dark:border-slate-600">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">{cat}</h2>
             {opps.length > 0 ? (
               <div className="mb-3">
-                <div className="text-xs font-semibold text-slate-400 mb-0.5">⚡ Achievable Gains (≤{threshold}s)</div>
+                <div className="text-xs font-semibold text-slate-400 dark:text-slate-500 mb-0.5">⚡ Achievable Gains (≤{threshold}s)</div>
                 <div className="text-xs space-y-0.5">
                   {opps.map((o, i) => (
-                    <div key={i} className={"flex gap-2 items-center flex-wrap " + (isHL(hl, o.rider) ? "bg-sky-100/60 rounded p-0.5" : "")}>
-                      <span className="text-amber-600 font-mono w-14">{o.gap.toFixed(1)}s</span>
+                    <div key={i} className={"flex gap-2 items-center flex-wrap rounded p-0.5 " + (isHL(hl, o.rider) ? "bg-sky-100/60 dark:bg-sky-900/40" : "")}>
+                      <span className="text-amber-600 dark:text-amber-400 font-mono w-14">{o.gap.toFixed(1)}s</span>
                       <ScoringDot r={o.rider} isScoring={scoringIds.has(o.rider.id)} />
-                      <span className={isHL(hl, o.rider) ? "text-sky-600 font-bold" : ""}>{o.rider.name}</span>
-                      <span className="text-slate-400">({o.rider.team})</span>
-                      <span className="text-slate-400">→{o.above.name}</span>
-                      <span className="text-emerald-600">+{o.pg}pts</span>
+                      <span className={isHL(hl, o.rider) ? "text-sky-600 dark:text-sky-400 font-bold" : "text-slate-700 dark:text-slate-200"}>{o.rider.name}</span>
+                      <span className="text-slate-400 dark:text-slate-500">({o.rider.team})</span>
+                      <span className="text-slate-400 dark:text-slate-500">→{o.above.name}</span>
+                      <span className="text-emerald-600 dark:text-emerald-400">+{o.pg}pts</span>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="text-xs text-slate-400 mb-2">No gains within {threshold}s</div>
+              <div className="text-xs text-slate-400 dark:text-slate-500 mb-2">No gains within {threshold}s</div>
             )}
             {defensive.length > 0 && (
               <div className="mb-3">
-                <div className="text-xs font-semibold text-red-500 mb-0.5" style={{ opacity: 0.8 }}>
+                <div className="text-xs font-semibold text-red-500 dark:text-red-400 mb-0.5 opacity-90">
                   🛡️ Defensive — Scoring Riders Under Threat
                 </div>
                 <div className="text-xs space-y-0.5">
                   {defensive.map((d, i) => (
-                    <div key={i} className={"flex gap-2 items-center flex-wrap " + (isHL(hl, d.rider) ? "bg-sky-100/60 rounded p-0.5" : "")}>
-                      <span className="text-red-500 font-mono w-14">{d.gap.toFixed(1)}s</span>
+                    <div key={i} className={"flex gap-2 items-center flex-wrap rounded p-0.5 " + (isHL(hl, d.rider) ? "bg-sky-100/60 dark:bg-sky-900/40" : "")}>
+                      <span className="text-red-500 dark:text-red-400 font-mono w-14">{d.gap.toFixed(1)}s</span>
                       <ScoringDot r={d.rider} isScoring={scoringIds.has(d.rider.id)} />
-                      <span className={isHL(hl, d.rider) ? "text-sky-600 font-bold" : ""}>{d.rider.name}</span>
-                      <span className="text-slate-400">({d.rider.team})</span>
-                      <span className="text-slate-400">
+                      <span className={isHL(hl, d.rider) ? "text-sky-600 dark:text-sky-400 font-bold" : "text-slate-700 dark:text-slate-200"}>{d.rider.name}</span>
+                      <span className="text-slate-400 dark:text-slate-500">({d.rider.team})</span>
+                      <span className="text-slate-400 dark:text-slate-500">
                         ← {d.threat.name} ({d.threat.team})
                       </span>
-                      <span className="text-red-500">-{d.loss}pts risk</span>
+                      <span className="text-red-500 dark:text-red-400">-{d.loss}pts risk</span>
                     </div>
                   ))}
                 </div>

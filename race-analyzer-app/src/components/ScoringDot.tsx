@@ -7,6 +7,6 @@ interface ScoringDotProps {
 
 export function ScoringDot({ r: _r, isScoring }: ScoringDotProps) {
   return isScoring ? (
-    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-0.5" title="Scoring" />
+    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-emerald-500/80 mr-0.5" title="Scoring" />
   ) : null;
 }
