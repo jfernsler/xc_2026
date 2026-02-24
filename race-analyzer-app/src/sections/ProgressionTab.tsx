@@ -303,15 +303,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     );
   }, [filteredSeries, searchQuery]);
 
-  const listSorted = useMemo(() => {
-    const byImprovement = (a: RiderProgressionSeries, b: RiderProgressionSeries) =>
-      seriesImprovement(b, metric) - seriesImprovement(a, metric);
-    if (selectedKeys.size === 0) return _.sortBy(listFiltered, (s) => -seriesImprovement(s, metric));
-    const selected = listFiltered.filter((s) => selectedKeys.has(s.key));
-    const rest = listFiltered.filter((s) => !selectedKeys.has(s.key));
-    return [...selected.sort(byImprovement), ...rest.sort(byImprovement)];
-  }, [listFiltered, selectedKeys, metric]);
-
   const seriesToShow = useMemo(() => {
     if (selectedKeys.size === 0) return filteredSeries;
     return filteredSeries.filter((s) => selectedKeys.has(s.key));
@@ -339,6 +330,15 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       case "gap-sec": return s.improvementGapSec;
     }
   };
+
+  const listSorted = useMemo(() => {
+    const byImprovement = (a: RiderProgressionSeries, b: RiderProgressionSeries) =>
+      seriesImprovement(b, metric) - seriesImprovement(a, metric);
+    if (selectedKeys.size === 0) return _.sortBy(listFiltered, (s) => -seriesImprovement(s, metric));
+    const selected = listFiltered.filter((s) => selectedKeys.has(s.key));
+    const rest = listFiltered.filter((s) => !selectedKeys.has(s.key));
+    return [...selected.sort(byImprovement), ...rest.sort(byImprovement)];
+  }, [listFiltered, selectedKeys, metric]);
 
   const cfg = METRIC_CONFIG[metric];
   const showLegend = selectedKeys.size > 0 && selectedKeys.size < filteredSeries.length;

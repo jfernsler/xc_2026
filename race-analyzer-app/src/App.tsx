@@ -517,6 +517,9 @@ export default function App() {
               >
                 <option value="">Switch view…</option>
                 <option value="all-years">All races, all years</option>
+                {years.map((y) => (
+                  <option key={y} value={`all-${y}`}>All Races {y}</option>
+                ))}
                 {raceOptions.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
