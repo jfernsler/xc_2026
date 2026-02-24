@@ -85,7 +85,7 @@ export default function App() {
     loadAllRaces(raceOptions)
       .then((riders) => {
         setRawData(riders);
-        setTab("results");
+        setTab("cumulative-teams");
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load all races"))
       .finally(() => setLoading(false));
@@ -352,23 +352,8 @@ export default function App() {
 
         {rawData.length > 0 && (
           <>
-            {TABS.map(([k, v]) => (
-              <button
-                key={k}
-                onClick={() => setTab(k)}
-                className={
-                  "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
-                  (tab === k
-                    ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
-                    : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
-                }
-              >
-                {v}
-              </button>
-            ))}
-            {races.length > 1 && (
+            {selectedRaceId === "all" ? (
               <>
-                <span className="px-2 h-6 border-l border-slate-300 dark:border-slate-600 self-center" aria-hidden />
                 {CUMULATIVE_TABS.map(([k, v]) => (
                   <button
                     key={k}
@@ -383,6 +368,42 @@ export default function App() {
                     {v}
                   </button>
                 ))}
+              </>
+            ) : (
+              <>
+                {TABS.map(([k, v]) => (
+                  <button
+                    key={k}
+                    onClick={() => setTab(k)}
+                    className={
+                      "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
+                      (tab === k
+                        ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
+                        : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
+                    }
+                  >
+                    {v}
+                  </button>
+                ))}
+                {races.length > 1 && (
+                  <>
+                    <span className="px-2 h-6 border-l border-slate-300 dark:border-slate-600 self-center" aria-hidden />
+                    {CUMULATIVE_TABS.map(([k, v]) => (
+                      <button
+                        key={k}
+                        onClick={() => setTab(k)}
+                        className={
+                          "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
+                          (tab === k
+                            ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
+                            : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
+                        }
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </>
@@ -419,22 +440,44 @@ export default function App() {
               className="w-9 bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
             />
           </label>
-          <select
-            value={selectedRaceId}
-            onChange={handleRaceSelect}
-            disabled={loading || !raceOptions.length}
-            className="bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
-          >
-            <option value="">Select race…</option>
-            {raceOptions.length > 1 && (
-              <option value="all">All races (cumulative)</option>
-            )}
-            {raceOptions.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+          {selectedRaceId === "all" ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">All races</span>
+              <select
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) handleRaceSelect({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>);
+                }}
+                disabled={loading || !raceOptions.length}
+                className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-44 disabled:opacity-50"
+                defaultValue=""
+              >
+                <option value="">Switch to single race…</option>
+                {raceOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <select
+              value={selectedRaceId}
+              onChange={handleRaceSelect}
+              disabled={loading || !raceOptions.length}
+              className="bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
+            >
+              <option value="">Select race…</option>
+              {raceOptions.length > 1 && (
+                <option value="all">All races (cumulative)</option>
+              )}
+              {raceOptions.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
           {loading && <span className="text-[11px] text-slate-400 dark:text-slate-500">Loading…</span>}
           {loadError && <span className="text-[11px] text-red-500 dark:text-red-400">{loadError}</span>}
         </div>
