@@ -65,7 +65,8 @@ interface ProgressionTabProps {
   raceOptions: RaceOption[];
 }
 
-export type ProgressionMetric = "gap-pct" | "place-pct" | "composite" | "gap-sec";
+export type ProgressionMetric = "gap-pct" | "place-pct" | "composite" | "gap-sec" | "total-placement";
+export type SchoolLevelFilter = "all" | "ms" | "hs";
 
 export interface RiderProgressionPoint {
   raceIndex: number;
@@ -79,6 +80,7 @@ export interface RiderProgressionPoint {
   fieldSize: number;
   placePct: number;
   performanceIndex: number;
+  totalPlace: number;
 }
 
 export interface RiderProgressionSeries {
@@ -92,6 +94,7 @@ export interface RiderProgressionSeries {
   improvementPlacePct: number;
   improvementComposite: number;
   improvementGapSec: number;
+  improvementTotalPlace: number;
 }
 
 const METRIC_CONFIG: Record<
@@ -130,9 +133,18 @@ const METRIC_CONFIG: Record<
     formatValue: (v) => v.toFixed(0) + "s",
     formatImprovement: (v) => (v <= 0 ? "−" : "+") + Math.abs(v).toFixed(0) + "s",
   },
+  "total-placement": {
+    label: "Total Placement",
+    yLabel: "Place (all MS or all HS)",
+    explanation:
+      "Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course, they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).",
+    formatValue: (v) => String(Math.round(v)),
+    formatImprovement: (v) => (v >= 0 ? "−" : "+") + Math.abs(Math.round(v)),
+  },
 };
 
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
+  const [schoolLevelFilter, setSchoolLevelFilter] = useState<SchoolLevelFilter>("all");
   const [teamFilter, setTeamFilter] = useState<string>("All");
   const [combineRegions, setCombineRegions] = useState(true);
   const [gradeLevelProgression, setGradeLevelProgression] = useState(false); // Compare vs All MS or All HS (excl. varsity)
@@ -207,45 +219,50 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       return `${y}-${idxInYear}`;
     });
 
-    const finished = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
+    const finishedAll = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
+    const finished =
+      schoolLevelFilter === "all"
+        ? finishedAll
+        : finishedAll.filter((r) => getSchoolLevel(r) === schoolLevelFilter);
+
     const winnerTimeByRaceCat: Record<string, number> = {};
     const raceCatToFieldSize: Record<string, number> = {};
     const raceCatToPlace: Record<string, Map<string, number>> = {};
-    if (gradeLevelProgression) {
-      const byRaceMs = _.groupBy(finished.filter((r) => getSchoolLevel(r) === "ms"), "race");
-      const byRaceHsNonVarsity = _.groupBy(
-        finished.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
-        "race"
-      );
-      Object.entries(byRaceMs).forEach(([raceId, riders]) => {
-        const min = _.min(riders.map((r) => r.totalTime!));
-        if (min == null) return;
-        const catKey = `${raceId}|ms`;
-        winnerTimeByRaceCat[catKey] = min;
-        raceCatToFieldSize[catKey] = riders.length;
-        const placeMap = new Map<string, number>();
-        const orderForPlace =
-          msLevel3RanHSCourse(riders)
-            ? [
-                ..._.sortBy(riders.filter(isMsRiderOnHSCourse), (r) => r.totalTime!),
-                ..._.sortBy(riders.filter((r) => !isMsRiderOnHSCourse(r)), (r) => r.totalTime!),
-              ]
-            : _.sortBy(riders, (r) => r.totalTime!);
-        orderForPlace.forEach((r, i) => placeMap.set(riderKey(r), i + 1));
-        raceCatToPlace[catKey] = placeMap;
-      });
-      Object.entries(byRaceHsNonVarsity).forEach(([raceId, riders]) => {
-        const min = _.min(riders.map((r) => r.totalTime!));
-        if (min == null) return;
-        const catKey = `${raceId}|hs-nonvarsity`;
-        winnerTimeByRaceCat[catKey] = min;
-        raceCatToFieldSize[catKey] = riders.length;
-        const placeMap = new Map<string, number>();
-        _.sortBy(riders, (r) => r.totalTime!).forEach((r, i) => placeMap.set(riderKey(r), i + 1));
-        raceCatToPlace[catKey] = placeMap;
-      });
-    } else {
-      const byRaceCat = _.groupBy(finished, (r) => baselineKey(r, combineRegions, false));
+
+    const byRaceMs = _.groupBy(finishedAll.filter((r) => getSchoolLevel(r) === "ms"), "race");
+    const byRaceHsNonVarsity = _.groupBy(
+      finishedAll.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
+      "race"
+    );
+    Object.entries(byRaceMs).forEach(([raceId, riders]) => {
+      const min = _.min(riders.map((r) => r.totalTime!));
+      if (min == null) return;
+      const catKey = `${raceId}|ms`;
+      if (gradeLevelProgression) winnerTimeByRaceCat[catKey] = min;
+      raceCatToFieldSize[catKey] = riders.length;
+      const placeMap = new Map<string, number>();
+      const orderForPlace =
+        msLevel3RanHSCourse(riders)
+          ? [
+              ..._.sortBy(riders.filter(isMsRiderOnHSCourse), (r) => r.totalTime!),
+              ..._.sortBy(riders.filter((r) => !isMsRiderOnHSCourse(r)), (r) => r.totalTime!),
+            ]
+          : _.sortBy(riders, (r) => r.totalTime!);
+      orderForPlace.forEach((r, i) => placeMap.set(riderKey(r), i + 1));
+      raceCatToPlace[catKey] = placeMap;
+    });
+    Object.entries(byRaceHsNonVarsity).forEach(([raceId, riders]) => {
+      const min = _.min(riders.map((r) => r.totalTime!));
+      if (min == null) return;
+      const catKey = `${raceId}|hs-nonvarsity`;
+      if (gradeLevelProgression) winnerTimeByRaceCat[catKey] = min;
+      raceCatToFieldSize[catKey] = riders.length;
+      const placeMap = new Map<string, number>();
+      _.sortBy(riders, (r) => r.totalTime!).forEach((r, i) => placeMap.set(riderKey(r), i + 1));
+      raceCatToPlace[catKey] = placeMap;
+    });
+    if (!gradeLevelProgression) {
+      const byRaceCat = _.groupBy(finishedAll, (r) => baselineKey(r, combineRegions, false));
       Object.entries(byRaceCat).forEach(([k, riders]) => {
         const min = _.min(riders.map((r) => r.totalTime!))!;
         winnerTimeByRaceCat[k] = min;
@@ -262,8 +279,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       if (raceIndex < 0) return;
       const gapToWinner = r.totalTime! - winnerTime;
       const gapPctRaw = winnerTime > 0 ? (gapToWinner / winnerTime) * 100 : 0;
-      if (gapPctRaw > 100) return;
-      const gapPct = Math.min(gapPctRaw, 100);
+      const gapPct = Math.min(Math.max(gapPctRaw, 0), 100);
       const fieldSize = raceCatToFieldSize[catKey] ?? 1;
       let place: number;
       if (gradeLevelProgression && raceCatToPlace[catKey]) {
@@ -274,6 +290,8 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       const placePct = fieldSize > 0 ? ((fieldSize - place + 1) / fieldSize) * 100 : 0;
       const gapScore = Math.max(0, 100 - gapPct);
       const performanceIndex = (gapScore + placePct) / 2;
+      const levelKey = getSchoolLevel(r) === "ms" ? `${r.race}|ms` : `${r.race}|hs-nonvarsity`;
+      const totalPlace = raceCatToPlace[levelKey]?.get(riderKey(r)) ?? place;
       const opt = optionsByYear.find((o) => o.id === r.race);
       const key = riderKey(r);
       if (!keyToPoints.has(key)) keyToPoints.set(key, []);
@@ -289,6 +307,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         fieldSize,
         placePct,
         performanceIndex,
+        totalPlace,
       });
     });
 
@@ -302,6 +321,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         const improvementGapPct = first.gapPct - last.gapPct;
         const improvementPlacePct = last.placePct - first.placePct;
         const improvementComposite = last.performanceIndex - first.performanceIndex;
+        const improvementTotalPlace = first.totalPlace - last.totalPlace;
         const nameRider = rawData.find((r) => riderKey(r) === key);
         const name = nameRider?.name ?? "";
         const team = last ? (rawData.find((r) => r.race === last.raceId && riderKey(r) === key)?.team ?? "") : (nameRider?.team ?? "");
@@ -317,13 +337,14 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
           improvementPlacePct,
           improvementComposite,
           improvementGapSec,
+          improvementTotalPlace,
         };
       });
 
     const teams = _.sortBy(_.uniq(series.map((s) => s.team)).filter(Boolean));
 
     return { series, raceOrder, shortLabels, teams };
-  }, [rawData, raceOptions, combineRegions, gradeLevelProgression, effectiveYears]);
+  }, [rawData, raceOptions, combineRegions, gradeLevelProgression, effectiveYears, schoolLevelFilter]);
 
   const filteredSeries = useMemo(() => {
     if (teamFilter === "All") return series;
@@ -356,6 +377,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       case "place-pct": return p.placePct;
       case "composite": return p.performanceIndex;
       case "gap-sec": return p.gapToWinner;
+      case "total-placement": return p.totalPlace;
     }
   };
 
@@ -365,6 +387,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       case "place-pct": return s.improvementPlacePct;
       case "composite": return s.improvementComposite;
       case "gap-sec": return s.improvementGapSec;
+      case "total-placement": return s.improvementTotalPlace;
     }
   };
 
@@ -385,6 +408,16 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     const allY = seriesToShow.flatMap((s) => s.points.map((p) => pointY(p, metric)));
     const minY = _.min(allY) ?? 0;
     const maxVal = _.max(allY) ?? 100;
+    if (metric === "total-placement") {
+      const maxPlace = Math.max(1, maxVal);
+      const ticks = [1];
+      if (maxPlace > 1) {
+        const step = Math.max(1, Math.ceil(maxPlace / 5));
+        for (let t = step; t < maxPlace; t += step) ticks.push(t);
+        ticks.push(maxPlace);
+      }
+      return { maxY: maxPlace, yTicks: _.uniq(ticks).sort((a, b) => a - b) };
+    }
     if (metric === "place-pct" || metric === "composite") {
       return { maxY: 100, yTicks: [0, 50, 100] };
     }
@@ -400,6 +433,9 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     padding.left + (raceIndex / Math.max(1, raceOrder.length - 1)) * innerW;
   const yScale = (y: number) =>
     padding.top + innerH - (y / maxY) * innerH;
+  const yScaleTotalPlace = (place: number) =>
+    padding.top + (maxY <= 1 ? 0 : (place - 1) / (maxY - 1) * innerH);
+  const yScaleForChart = metric === "total-placement" ? yScaleTotalPlace : (y: number) => yScale(y);
 
   const colors = [
     "rgb(14, 165, 233)",
@@ -415,6 +451,18 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   return (
     <div>
       <div className="flex items-center gap-4 mb-4 flex-wrap">
+        <label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          School level
+          <select
+            value={schoolLevelFilter}
+            onChange={(e) => setSchoolLevelFilter(e.target.value as SchoolLevelFilter)}
+            className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1.5 text-xs text-slate-900 min-w-[140px]"
+          >
+            <option value="all">All</option>
+            <option value="ms">Middle School</option>
+            <option value="hs">High School</option>
+          </select>
+        </label>
         {availableYears.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-slate-500 dark:text-slate-400">Years</span>
@@ -483,9 +531,9 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       <div className="mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600">
         <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">{cfg.label}: {cfg.yLabel}</p>
         <p className="text-xs text-slate-500 dark:text-slate-400">{cfg.explanation}</p>
-        {gradeLevelProgression && (metric === "place-pct" || metric === "composite") && (
+        {(gradeLevelProgression || metric === "total-placement") && (metric === "place-pct" || metric === "composite" || metric === "total-placement") && (
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-            With Grade Level Progression on, placement is among <strong>all middle school</strong> or <strong>all high school (excluding varsity)</strong> in that race. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked in their order by time but placed ahead of all other MS riders.
+            Placement is among <strong>all middle school</strong> or <strong>all high school (excluding varsity)</strong> in that race. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders.
           </p>
         )}
       </div>
@@ -528,21 +576,21 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               <g key={g}>
                 <line
                   x1={padding.left}
-                  y1={yScale(g)}
+                  y1={yScaleForChart(g)}
                   x2={padding.left + innerW}
-                  y2={yScale(g)}
+                  y2={yScaleForChart(g)}
                   stroke="currentColor"
                   strokeOpacity={0.12}
                   strokeDasharray="2 2"
                 />
                 <text
                   x={padding.left - 6}
-                  y={yScale(g)}
+                  y={yScaleForChart(g)}
                   textAnchor="end"
                   dominantBaseline="middle"
                   className="fill-slate-400 dark:fill-slate-500 text-[10px]"
                 >
-                  {metric === "gap-sec" ? g.toFixed(0) + "s" : g.toFixed(0)}
+                  {metric === "total-placement" ? String(g) : metric === "gap-sec" ? g.toFixed(0) + "s" : g.toFixed(0)}
                 </text>
               </g>
             ))}
@@ -571,7 +619,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
             {/* Lines */}
             {seriesToShow.map((s, i) => {
-              const pts = s.points.map((p) => ({ x: xScale(p.raceIndex), y: yScale(pointY(p, metric)) }));
+              const pts = s.points.map((p) => ({ x: xScale(p.raceIndex), y: yScaleForChart(pointY(p, metric)) }));
               const pathD = smoothPath(pts);
               const isHovered = hoveredKey === s.key;
               const color = isHovered ? "rgb(14, 165, 233)" : colors[i % colors.length];
