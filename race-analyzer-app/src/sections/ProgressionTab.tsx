@@ -67,11 +67,14 @@ export interface RiderProgressionSeries {
   improvement: number;
 }
 
-/** True if both series have the same set of races (same raceIds in same order). */
-function sameRaceSet(a: RiderProgressionSeries, b: RiderProgressionSeries): boolean {
-  if (a.points.length !== b.points.length) return false;
-  return a.points.every((p, i) => p.raceId === b.points[i]!.raceId);
+/** Number of races both series have in common (by raceId). */
+function overlapCount(a: RiderProgressionSeries, b: RiderProgressionSeries): number {
+  const bIds = new Set(b.points.map((p) => p.raceId));
+  return a.points.filter((p) => bIds.has(p.raceId)).length;
 }
+
+/** Min overlapping races to be in the selected rider's cohort. 1 = any overlap, 2 = at least 2 races together. */
+const COHORT_MIN_OVERLAP = 1;
 
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [schoolLevelFilter, setSchoolLevelFilter] = useState<SchoolLevelFilter>("all");
@@ -239,14 +242,15 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     return filteredSeries.filter((s) => selectedKeys.has(s.key));
   }, [filteredSeries, selectedKeys]);
 
-  /** When exactly one rider is selected: their cohort (same race set), cohort avg place per race (excluding rider), and contribution vs cohort. */
+  /** When exactly one rider is selected: cohort = riders who share at least COHORT_MIN_OVERLAP races; cohort avg per race (excluding rider); contribution vs cohort. */
   const singleRiderCohort = useMemo(() => {
     if (selectedKeys.size !== 1) return null;
     const selected = filteredSeries.find((s) => selectedKeys.has(s.key));
     if (!selected) return null;
-    const cohort = filteredSeries.filter((s) => sameRaceSet(s, selected));
-    const cohortRest = cohort.filter((s) => s.key !== selected.key);
-    if (cohortRest.length === 0) return { selected, cohort, cohortRest, cohortAvgByRaceId: null, cohortImprovement: 0, contribution: 0 };
+    const cohortRest = filteredSeries.filter(
+      (s) => s.key !== selected.key && overlapCount(selected, s) >= COHORT_MIN_OVERLAP
+    );
+    if (cohortRest.length === 0) return { selected, cohortRest, cohortAvgByRaceId: null, cohortImprovement: 0, contribution: 0 };
     const cohortAvgByRaceId = new Map<number, number>();
     selected.points.forEach((p) => {
       const places = cohortRest
@@ -262,7 +266,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     const contribution = selected.improvement - cohortImprovement;
     return {
       selected,
-      cohort,
       cohortRest,
       cohortAvgByRaceId,
       cohortImprovement,
@@ -374,7 +377,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
           Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          <strong>Cohort</strong> = riders who race the same set of races (same schedule). Select one rider to see their cohort size and <strong>contribution</strong>: how much they improved vs the cohort average (positive = contributing up, negative = contributing down). You can see their place vs the group average at each race.
+          <strong>Cohort</strong> = riders who raced at least one of the same races (tracked by name across years). Select one rider to see their cohort size and <strong>contribution</strong>: how much they improved vs the cohort average (positive = contributing up, negative = contributing down). At each race the cohort average uses only riders who ran that race.
         </p>
       </div>
 
@@ -565,10 +568,10 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               <div className="mt-3 mb-3 p-3 rounded-lg border border-sky-200 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/20">
                 <div className="text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
                   Cohort: {selected.name}
-                  {hasCohort ? ` vs ${cohortRest.length} rider${cohortRest.length !== 1 ? "s" : ""} with same race schedule` : " — no other riders with the same race schedule"}
+                  {hasCohort ? ` vs ${cohortRest.length} rider${cohortRest.length !== 1 ? "s" : ""} who raced at least one of the same races` : " — no other riders who raced any of the same races"}
                 </div>
                 {!hasCohort && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Contribution is shown only when at least one other rider raced the exact same set of races.</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Contribution is shown when at least one other rider raced any of the same races as this rider.</p>
                 )}
                 {hasCohort && (
                 <>
