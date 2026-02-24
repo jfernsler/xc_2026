@@ -592,19 +592,33 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                       )}
                       {hasCohort && (
                         <>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-1.5">
+                            <strong>Improving faster/slower</strong> = change in place (first → last race) vs cohort. <strong>Ahead/behind</strong> = your place vs cohort average in that race.
+                          </p>
+                          {(() => {
+                            const aheadCount = perRace.filter((r) => r.ahead != null && r.ahead > 0).length;
+                            const totalRaces = perRace.length;
+                            const positionSummary = totalRaces > 0 ? `Ahead of cohort in ${aheadCount} of ${totalRaces} races` : null;
+                            return (
+                              <>
                           <div className="flex flex-wrap items-center gap-4">
+                            {positionSummary && (
+                              <span className={"text-xs font-medium " + (aheadCount > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400")}>
+                                {positionSummary}
+                              </span>
+                            )}
                             <div className="flex items-center gap-2">
                               <span
                                 className={
                                   "text-sm font-medium " +
-                                  (contributingUp ? "text-emerald-600 dark:text-emerald-400" : contributingDown ? "text-amber-600 dark:text-amber-400" : "text-slate-600 dark:text-slate-400")
+                                  (contributingUp ? "text-emerald-600 dark:text-emerald-400" : contributingDown ? "text-slate-600 dark:text-slate-400" : "text-slate-600 dark:text-slate-400")
                                 }
                               >
-                                {contributingUp ? "Contributing up" : contributingDown ? "Contributing down" : "In line with cohort"}
+                                {contributingUp ? "Improving faster than cohort" : contributingDown ? "Improving slower than cohort" : "Improving in line with cohort"}
                               </span>
                               <span className="text-slate-500 dark:text-slate-400 text-xs">
-                                {contribution > 0 ? "+" : ""}{contribution.toFixed(1)} vs cohort avg
-                                (rider improved {selected.improvement >= 0 ? "−" : "+"}{Math.abs(selected.improvement)} places; cohort avg {cohortImprovement >= 0 ? "−" : "+"}{Math.abs(cohortImprovement).toFixed(1)} places)
+                                {contribution > 0 ? "+" : ""}{contribution.toFixed(1)} places vs cohort over period
+                                (rider {selected.improvement >= 0 ? "moved up " + selected.improvement : "moved down " + Math.abs(selected.improvement)}; cohort avg {cohortImprovement >= 0 ? "moved up " + cohortImprovement.toFixed(1) : "moved down " + Math.abs(cohortImprovement).toFixed(1)})
                               </span>
                             </div>
                             {cohortAvgByRaceId && (
@@ -613,7 +627,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                                   const avg = cohortAvgByRaceId.get(p.raceId);
                                   const ahead = avg != null ? avg - p.totalPlace : null;
                                   return (
-                                    <span key={i} title={`${p.raceName}: ${p.totalPlace} vs cohort avg ${avg?.toFixed(1) ?? "—"}`}>
+                                    <span key={i} title={`${p.raceName}: place ${p.totalPlace}, cohort avg place ${avg?.toFixed(1) ?? "—"}`}>
                                       {shortLabels[p.raceIndex]}: {p.totalPlace} vs {avg != null ? avg.toFixed(1) : "—"}
                                       {ahead != null && ahead !== 0 && (
                                         <span className={ahead > 0 ? "text-emerald-600" : "text-amber-600"}> ({ahead > 0 ? "ahead" : "behind"} {Math.abs(ahead).toFixed(1)})</span>
@@ -624,6 +638,9 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                               </div>
                             )}
                           </div>
+                              </>
+                            );
+                          })()}
                           {perRace.length > 0 && cohortAvgByRaceId && (
                             <div className="mt-2">
                               <svg width={w} height={h} className="overflow-visible">
@@ -664,10 +681,10 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                           <span
                             className={
                               "text-xs font-medium shrink-0 " +
-                              (contributingUp ? "text-emerald-600 dark:text-emerald-400" : contributingDown ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400")
+                              (contributingUp ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400")
                             }
                           >
-                            {contributingUp ? "Contributing up" : contributingDown ? "Contributing down" : "In line"} {contribution !== 0 && `(${contribution > 0 ? "+" : ""}${contribution.toFixed(1)})`}
+                            {contributingUp ? "Improving faster" : contributingDown ? "Improving slower" : "In line"} {contribution !== 0 && `(${contribution > 0 ? "+" : ""}${contribution.toFixed(1)})`}
                           </span>
                         )}
                       </div>
