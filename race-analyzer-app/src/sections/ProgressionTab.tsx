@@ -10,12 +10,6 @@ function riderKey(r: Rider) {
   return (r.name ?? "").trim().toUpperCase().replace(/\s+/g, " ");
 }
 
-/** Optionally strip region from category for baselining (e.g. "JV2 Boys North" → "JV2 Boys"). */
-function categoryBaselineRegion(cat: string, combineRegions: boolean): string {
-  if (!combineRegions) return cat;
-  return cat.replace(/\s+(North|South|Central|Other)\s*$/i, "").trim() || cat;
-}
-
 /** MS rider ran the longer HS course in this race (e.g. Grade 8 Level 3 at Finals). Detected by category. */
 function isMsRiderOnHSCourse(r: Rider): boolean {
   const raw = (r.categoryRaw ?? "").toLowerCase();
@@ -30,20 +24,6 @@ function msLevel3RanHSCourse(riders: Rider[]): boolean {
   const mean3 = _.mean(level3.map((r) => r.totalTime!));
   const meanOther = _.mean(other.map((r) => r.totalTime!));
   return mean3 != null && meanOther != null && mean3 >= meanOther * 1.15;
-}
-
-/** Baseline key for gap-to-winner: by category (with optional region strip), or by school level for Grade Level Progression. */
-function baselineKey(
-  r: Rider,
-  combineRegions: boolean,
-  gradeLevelProgression: boolean
-): string {
-  if (gradeLevelProgression) {
-    const level = getSchoolLevel(r);
-    if (level === "ms") return `${r.race}|ms`;
-    return `${r.race}|hs-nonvarsity`;
-  }
-  return `${r.race}|${categoryBaselineRegion(r.categoryRaw ?? "", combineRegions)}`;
 }
 
 /** Cubic Bezier path with flat tangents */
@@ -65,7 +45,6 @@ interface ProgressionTabProps {
   raceOptions: RaceOption[];
 }
 
-export type ProgressionMetric = "gap-pct" | "place-pct" | "composite" | "gap-sec" | "total-placement";
 export type SchoolLevelFilter = "all" | "ms" | "hs";
 
 export interface RiderProgressionPoint {
@@ -74,13 +53,35 @@ export interface RiderProgressionPoint {
   year: number;
   raceName: string;
   categoryRaw: string;
-  gapToWinner: number;
-  gapPct: number;
-  place: number;
-  fieldSize: number;
-  placePct: number;
-  performanceIndex: number;
   totalPlace: number;
+  /** Riders in same pool (all MS or all HS) in this race. */
+  fieldSize: number;
+}
+
+/** Cohort band for a given cohort size. Derived from totalPlace + fieldSize. */
+export interface CohortAtPoint {
+  cohortIndex: number;
+  cohortLabel: string;
+  placeInCohort: number;
+  cohortSizeInBand: number;
+  cohortPct: number;
+}
+
+function cohortAtPoint(p: RiderProgressionPoint, cohortSize: number): CohortAtPoint {
+  const cohortIndex = Math.ceil(p.totalPlace / cohortSize);
+  const placeInCohort = p.totalPlace - (cohortIndex - 1) * cohortSize;
+  const cohortSizeInBand = Math.max(
+    1,
+    Math.min(cohortSize, p.fieldSize - (cohortIndex - 1) * cohortSize)
+  );
+  const cohortPct =
+    cohortSizeInBand <= 1
+      ? 100
+      : 100 * (1 - (placeInCohort - 1) / cohortSizeInBand);
+  const start = (cohortIndex - 1) * cohortSize + 1;
+  const end = Math.min(cohortIndex * cohortSize, p.fieldSize);
+  const cohortLabel = end > start ? `${start}–${end}` : `${start}`;
+  return { cohortIndex, cohortLabel, placeInCohort, cohortSizeInBand, cohortPct };
 }
 
 export interface RiderProgressionSeries {
@@ -90,72 +91,23 @@ export interface RiderProgressionSeries {
   region: string;
   points: RiderProgressionPoint[];
   improvement: number;
-  improvementGapPct: number;
-  improvementPlacePct: number;
-  improvementComposite: number;
-  improvementGapSec: number;
-  improvementTotalPlace: number;
 }
-
-const METRIC_CONFIG: Record<
-  ProgressionMetric,
-  { label: string; yLabel: string; explanation: string; formatValue: (v: number) => string; formatImprovement: (v: number) => string }
-> = {
-  "gap-pct": {
-    label: "Gap %",
-    yLabel: "Gap to winner (%)",
-    explanation:
-      "Your time behind the winner as a percentage of the winner’s time. Comparable across courses: a 5% gap is similar difficulty whether the race is 20 or 45 minutes. Improvement = first-race gap % minus last-race gap % (positive = you closed the gap).",
-    formatValue: (v) => v.toFixed(1) + "%",
-    formatImprovement: (v) => (v >= 0 ? "−" : "+") + Math.abs(v).toFixed(1) + "%",
-  },
-  "place-pct": {
-    label: "Place %",
-    yLabel: "Place % (vs peers)",
-    explanation:
-      "Where you finished among your peers: 100% = 1st, 0% = last in your category/group. Improvement = last-race place % minus first-race place % (positive = you moved up relative to peers).",
-    formatValue: (v) => v.toFixed(0) + "%",
-    formatImprovement: (v) => (v >= 0 ? "+" : "") + v.toFixed(1) + "%",
-  },
-  composite: {
-    label: "Composite",
-    yLabel: "Performance index (0–100)",
-    explanation:
-      "Single score combining gap % and place % (50/50): 100 = winner, lower = further behind. Comparable across races. Improvement = last-race index minus first-race index (positive = better).",
-    formatValue: (v) => v.toFixed(0),
-    formatImprovement: (v) => (v >= 0 ? "+" : "") + v.toFixed(1),
-  },
-  "gap-sec": {
-    label: "Gap (sec)",
-    yLabel: "Gap to winner (sec)",
-    explanation:
-      "Raw seconds behind the winner in your category/group. Varies with course length and conditions; use Gap % for course-normalized comparison. Improvement = first-race gap minus last-race gap (negative = you closed the gap).",
-    formatValue: (v) => v.toFixed(0) + "s",
-    formatImprovement: (v) => (v <= 0 ? "−" : "+") + Math.abs(v).toFixed(0) + "s",
-  },
-  "total-placement": {
-    label: "Total Placement",
-    yLabel: "Place (all MS or all HS)",
-    explanation:
-      "Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course, they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).",
-    formatValue: (v) => String(Math.round(v)),
-    formatImprovement: (v) => (v >= 0 ? "−" : "+") + Math.abs(Math.round(v)),
-  },
-};
 
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [schoolLevelFilter, setSchoolLevelFilter] = useState<SchoolLevelFilter>("all");
   const [teamFilter, setTeamFilter] = useState<string>("All");
-  const [combineRegions, setCombineRegions] = useState(true);
-  const [gradeLevelProgression, setGradeLevelProgression] = useState(false); // Compare vs All MS or All HS (excl. varsity)
   const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set()); // empty = all years
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(800);
-  const [metric, setMetric] = useState<ProgressionMetric>("total-placement");
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  /** Cohort size for banding (e.g. 10 = cohorts 1–10, 11–20, …). */
+  const [cohortSize, setCohortSize] = useState(10);
+  const COHORT_SIZE_MIN = 5;
+  const COHORT_SIZE_MAX = 30;
+  const COHORT_SIZE_STEP = 5;
 
   const availableYears = useMemo(
     () => _.sortBy(_.uniq(raceOptions.map((r) => r.year).filter((y): y is number => y != null))),
@@ -225,21 +177,14 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         ? finishedAll
         : finishedAll.filter((r) => getSchoolLevel(r) === schoolLevelFilter);
 
-    const winnerTimeByRaceCat: Record<string, number> = {};
-    const raceCatToFieldSize: Record<string, number> = {};
     const raceCatToPlace: Record<string, Map<string, number>> = {};
-
     const byRaceMs = _.groupBy(finishedAll.filter((r) => getSchoolLevel(r) === "ms"), "race");
     const byRaceHsNonVarsity = _.groupBy(
       finishedAll.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
       "race"
     );
     Object.entries(byRaceMs).forEach(([raceId, riders]) => {
-      const min = _.min(riders.map((r) => r.totalTime!));
-      if (min == null) return;
       const catKey = `${raceId}|ms`;
-      if (gradeLevelProgression) winnerTimeByRaceCat[catKey] = min;
-      raceCatToFieldSize[catKey] = riders.length;
       const placeMap = new Map<string, number>();
       const orderForPlace =
         msLevel3RanHSCourse(riders)
@@ -252,46 +197,20 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       raceCatToPlace[catKey] = placeMap;
     });
     Object.entries(byRaceHsNonVarsity).forEach(([raceId, riders]) => {
-      const min = _.min(riders.map((r) => r.totalTime!));
-      if (min == null) return;
       const catKey = `${raceId}|hs-nonvarsity`;
-      if (gradeLevelProgression) winnerTimeByRaceCat[catKey] = min;
-      raceCatToFieldSize[catKey] = riders.length;
       const placeMap = new Map<string, number>();
       _.sortBy(riders, (r) => r.totalTime!).forEach((r, i) => placeMap.set(riderKey(r), i + 1));
       raceCatToPlace[catKey] = placeMap;
     });
-    if (!gradeLevelProgression) {
-      const byRaceCat = _.groupBy(finishedAll, (r) => baselineKey(r, combineRegions, false));
-      Object.entries(byRaceCat).forEach(([k, riders]) => {
-        const min = _.min(riders.map((r) => r.totalTime!))!;
-        winnerTimeByRaceCat[k] = min;
-        raceCatToFieldSize[k] = riders.length;
-      });
-    }
 
     const keyToPoints = new Map<string, RiderProgressionPoint[]>();
     finished.forEach((r) => {
-      const catKey = baselineKey(r, combineRegions, gradeLevelProgression);
-      const winnerTime = winnerTimeByRaceCat[catKey];
-      if (winnerTime == null) return;
       const raceIndex = raceIdToIndex[r.race] ?? -1;
       if (raceIndex < 0) return;
-      const gapToWinner = r.totalTime! - winnerTime;
-      const gapPctRaw = winnerTime > 0 ? (gapToWinner / winnerTime) * 100 : 0;
-      const gapPct = Math.min(Math.max(gapPctRaw, 0), 100);
-      const fieldSize = raceCatToFieldSize[catKey] ?? 1;
-      let place: number;
-      if (gradeLevelProgression && raceCatToPlace[catKey]) {
-        place = raceCatToPlace[catKey].get(riderKey(r)) ?? fieldSize;
-      } else {
-        place = r.place >= 1 && r.place <= fieldSize ? r.place : fieldSize;
-      }
-      const placePct = fieldSize > 0 ? ((fieldSize - place + 1) / fieldSize) * 100 : 0;
-      const gapScore = Math.max(0, 100 - gapPct);
-      const performanceIndex = (gapScore + placePct) / 2;
       const levelKey = getSchoolLevel(r) === "ms" ? `${r.race}|ms` : `${r.race}|hs-nonvarsity`;
-      const totalPlace = raceCatToPlace[levelKey]?.get(riderKey(r)) ?? place;
+      const placeMap = raceCatToPlace[levelKey];
+      const totalPlace = placeMap?.get(riderKey(r));
+      if (totalPlace == null) return;
       const opt = optionsByYear.find((o) => o.id === r.race);
       const key = riderKey(r);
       if (!keyToPoints.has(key)) keyToPoints.set(key, []);
@@ -301,13 +220,8 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         year: opt?.year ?? 0,
         raceName: opt?.name ?? "",
         categoryRaw: r.categoryRaw,
-        gapToWinner,
-        gapPct,
-        place,
-        fieldSize,
-        placePct,
-        performanceIndex,
         totalPlace,
+        fieldSize: placeMap.size,
       });
     });
 
@@ -317,34 +231,18 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         const sorted = _.sortBy(points, "raceIndex");
         const first = sorted[0]!;
         const last = sorted[sorted.length - 1]!;
-        const improvementGapSec = last.gapToWinner - first.gapToWinner;
-        const improvementGapPct = first.gapPct - last.gapPct;
-        const improvementPlacePct = last.placePct - first.placePct;
-        const improvementComposite = last.performanceIndex - first.performanceIndex;
-        const improvementTotalPlace = first.totalPlace - last.totalPlace;
+        const improvement = first.totalPlace - last.totalPlace;
         const nameRider = rawData.find((r) => riderKey(r) === key);
         const name = nameRider?.name ?? "";
         const team = last ? (rawData.find((r) => r.race === last.raceId && riderKey(r) === key)?.team ?? "") : (nameRider?.team ?? "");
         const region = nameRider?.region ?? "Other";
-        return {
-          key,
-          name,
-          team,
-          region,
-          points: sorted,
-          improvement: improvementGapSec,
-          improvementGapPct,
-          improvementPlacePct,
-          improvementComposite,
-          improvementGapSec,
-          improvementTotalPlace,
-        };
+        return { key, name, team, region, points: sorted, improvement };
       });
 
     const teams = _.sortBy(_.uniq(series.map((s) => s.team)).filter(Boolean));
 
     return { series, raceOrder, shortLabels, teams };
-  }, [rawData, raceOptions, combineRegions, gradeLevelProgression, effectiveYears, schoolLevelFilter]);
+  }, [rawData, raceOptions, effectiveYears, schoolLevelFilter]);
 
   const filteredSeries = useMemo(() => {
     if (teamFilter === "All") return series;
@@ -371,71 +269,44 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const innerW = Math.max(0, chartWidth - padding.left - padding.right);
   const innerH = chartHeight - padding.top - padding.bottom;
 
-  const pointY = (p: RiderProgressionPoint, m: ProgressionMetric): number => {
-    switch (m) {
-      case "gap-pct": return p.gapPct;
-      case "place-pct": return p.placePct;
-      case "composite": return p.performanceIndex;
-      case "gap-sec": return p.gapToWinner;
-      case "total-placement": return p.totalPlace;
-    }
-  };
-
-  const seriesImprovement = (s: RiderProgressionSeries, m: ProgressionMetric): number => {
-    switch (m) {
-      case "gap-pct": return s.improvementGapPct;
-      case "place-pct": return s.improvementPlacePct;
-      case "composite": return s.improvementComposite;
-      case "gap-sec": return s.improvementGapSec;
-      case "total-placement": return s.improvementTotalPlace;
-    }
-  };
-
   const listSorted = useMemo(() => {
-    const byImprovement = (a: RiderProgressionSeries, b: RiderProgressionSeries) =>
-      seriesImprovement(b, metric) - seriesImprovement(a, metric);
-    if (selectedKeys.size === 0) return _.sortBy(listFiltered, (s) => -seriesImprovement(s, metric));
+    const byImprovement = (a: RiderProgressionSeries, b: RiderProgressionSeries) => b.improvement - a.improvement;
+    if (selectedKeys.size === 0) return _.sortBy(listFiltered, (s) => -s.improvement);
     const selected = listFiltered.filter((s) => selectedKeys.has(s.key));
     const rest = listFiltered.filter((s) => !selectedKeys.has(s.key));
     return [...selected.sort(byImprovement), ...rest.sort(byImprovement)];
-  }, [listFiltered, selectedKeys, metric]);
+  }, [listFiltered, selectedKeys]);
 
-  const cfg = METRIC_CONFIG[metric];
   const showLegend = selectedKeys.size > 0 && selectedKeys.size < filteredSeries.length;
 
   const { maxY, yTicks } = useMemo(() => {
-    if (seriesToShow.length === 0) return { maxY: 100, yTicks: [0, 50, 100] };
-    const allY = seriesToShow.flatMap((s) => s.points.map((p) => pointY(p, metric)));
-    const minY = _.min(allY) ?? 0;
-    const maxVal = _.max(allY) ?? 100;
-    if (metric === "total-placement") {
-      const maxPlace = Math.max(1, maxVal);
-      const ticks = [1];
-      if (maxPlace > 1) {
-        const step = Math.max(1, Math.ceil(maxPlace / 5));
-        for (let t = step; t < maxPlace; t += step) ticks.push(t);
-        ticks.push(maxPlace);
-      }
-      return { maxY: maxPlace, yTicks: _.uniq(ticks).sort((a, b) => a - b) };
+    if (seriesToShow.length === 0) return { maxY: 1, yTicks: [1] };
+    const allPlaces = seriesToShow.flatMap((s) => s.points.map((p) => p.totalPlace));
+    const maxPlace = Math.max(1, _.max(allPlaces) ?? 1);
+    const ticks = [1];
+    if (maxPlace > 1) {
+      const step = Math.max(1, Math.ceil(maxPlace / 5));
+      for (let t = step; t < maxPlace; t += step) ticks.push(t);
+      ticks.push(maxPlace);
     }
-    if (metric === "place-pct" || metric === "composite") {
-      return { maxY: 100, yTicks: [0, 50, 100] };
+    return { maxY: maxPlace, yTicks: _.uniq(ticks).sort((a, b) => a - b) };
+  }, [seriesToShow]);
+
+  /** Cohort band boundaries (place range) for background shading. */
+  const cohortBands = useMemo(() => {
+    const bands: { low: number; high: number }[] = [];
+    for (let k = 1; (k - 1) * cohortSize + 1 <= maxY; k++) {
+      const low = (k - 1) * cohortSize + 1;
+      const high = Math.min(k * cohortSize, maxY);
+      bands.push({ low, high });
     }
-    const maxY = Math.max(maxVal * 1.05, minY + 1);
-    const step = maxY <= 60 ? 20 : maxY <= 120 ? 30 : Math.ceil(maxY / 4 / 10) * 10;
-    const ticks = [0];
-    for (let t = step; t < maxY; t += step) ticks.push(t);
-    ticks.push(maxY);
-    return { maxY, yTicks: ticks.length > 1 ? ticks : [0, maxY] };
-  }, [seriesToShow, metric]);
+    return bands;
+  }, [cohortSize, maxY]);
 
   const xScale = (raceIndex: number) =>
     padding.left + (raceIndex / Math.max(1, raceOrder.length - 1)) * innerW;
-  const yScale = (y: number) =>
-    padding.top + innerH - (y / maxY) * innerH;
-  const yScaleTotalPlace = (place: number) =>
+  const yScalePlace = (place: number) =>
     padding.top + (maxY <= 1 ? 0 : (place - 1) / (maxY - 1) * innerH);
-  const yScaleForChart = metric === "total-placement" ? yScaleTotalPlace : (y: number) => yScale(y);
 
   const colors = [
     "rgb(14, 165, 233)",
@@ -496,35 +367,18 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             ))}
           </select>
         </label>
-        <label className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={combineRegions}
-            onChange={(e) => setCombineRegions(e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Combine regions (baseline by category only, e.g. JV Boys)
-        </label>
-        <label className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={gradeLevelProgression}
-            onChange={(e) => setGradeLevelProgression(e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Grade Level Progression (compare vs All MS or All HS, exclude varsity)
-        </label>
         <label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-          Metric
-          <select
-            value={metric}
-            onChange={(e) => setMetric(e.target.value as ProgressionMetric)}
-            className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1.5 text-xs text-slate-900 min-w-[140px]"
-          >
-            {(Object.keys(METRIC_CONFIG) as ProgressionMetric[]).map((m) => (
-              <option key={m} value={m}>{METRIC_CONFIG[m].label}</option>
-            ))}
-          </select>
+          Cohort size
+          <input
+            type="range"
+            min={COHORT_SIZE_MIN}
+            max={COHORT_SIZE_MAX}
+            step={COHORT_SIZE_STEP}
+            value={cohortSize}
+            onChange={(e) => setCohortSize(Number(e.target.value))}
+            className="w-24 accent-sky-500"
+          />
+          <span className="tabular-nums w-6 text-slate-700 dark:text-slate-300">{cohortSize}</span>
         </label>
         <span className="text-xs text-slate-400 dark:text-slate-500">
           Riders matched by name only. {filteredSeries.length} riders with 2+ races.
@@ -533,13 +387,13 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       </div>
 
       <div className="mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600">
-        <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">{cfg.label}: {cfg.yLabel}</p>
-        <p className="text-xs text-slate-500 dark:text-slate-400">{cfg.explanation}</p>
-        {(gradeLevelProgression || metric === "total-placement") && (metric === "place-pct" || metric === "composite" || metric === "total-placement") && (
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-            Placement is among <strong>all middle school</strong> or <strong>all high school (excluding varsity)</strong> in that race. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders.
-          </p>
-        )}
+        <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Total Placement &amp; Cohort Progression</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <strong>Cohort size</strong> splits the field into bands (e.g. 10 = 1–10, 11–20, …). Use the slider to change band size. Chart bands and “within-cohort” (place and percentile inside your band) use this setting. Select one rider to see whether they’re outperforming or underperforming their cohort over time.
+        </p>
       </div>
 
       <div className="w-full">
@@ -550,8 +404,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
           {hoveredKey && (() => {
             const s = seriesToShow.find((x) => x.key === hoveredKey);
             if (!s) return null;
-            const imp = seriesImprovement(s, metric);
-            const improved = (metric === "gap-sec" ? imp <= 0 : imp >= 0);
+            const improved = s.improvement >= 0;
+            const impStr = (s.improvement >= 0 ? "−" : "+") + Math.abs(Math.round(s.improvement));
+            const firstCohort = cohortAtPoint(s.points[0]!, cohortSize);
+            const lastCohort = cohortAtPoint(s.points[s.points.length - 1]!, cohortSize);
+            const cohortChange = firstCohort.cohortIndex - lastCohort.cohortIndex;
             return (
               <div
                 className="pointer-events-none fixed z-50 px-2 py-1.5 rounded bg-slate-800 dark:bg-slate-700 text-white text-xs shadow-lg border border-slate-600"
@@ -559,10 +416,24 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               >
                 <div className="font-medium">{s.name} ({s.team})</div>
                 <div className="text-slate-300 dark:text-slate-400">
-                  {s.points.map((p) => cfg.formatValue(pointY(p, metric))).join(" → ")}
+                  {s.points.map((p) => p.totalPlace).join(" → ")}
+                </div>
+                <div className="text-slate-400 dark:text-slate-500 mt-0.5">
+                  Cohort: {s.points.map((p) => cohortAtPoint(p, cohortSize).cohortLabel).join(" → ")}
+                  {s.points.some((p) => {
+                    const c = cohortAtPoint(p, cohortSize);
+                    return c.placeInCohort !== c.cohortSizeInBand;
+                  }) && (
+                    <> · In cohort: {s.points.map((p) => `${cohortAtPoint(p, cohortSize).placeInCohort}/${cohortAtPoint(p, cohortSize).cohortSizeInBand}`).join(" → ")}</>
+                  )}
                 </div>
                 <div className={improved ? "text-emerald-400" : "text-amber-400"}>
-                  {improved ? "Improved " : ""}{cfg.formatImprovement(imp)} vs first race
+                  {improved ? "Improved " : ""}{impStr} vs first race
+                  {cohortChange !== 0 && (
+                    <span className="text-slate-400 dark:text-slate-500">
+                      {" "}· {cohortChange > 0 ? "Up" : "Down"} {Math.abs(cohortChange)} cohort{Math.abs(cohortChange) !== 1 ? "s" : ""}
+                    </span>
+                  )}
                 </div>
               </div>
             );
@@ -575,26 +446,43 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             className="w-full overflow-visible"
             style={{ minHeight: chartHeight, maxHeight: chartHeight }}
           >
+            {/* Cohort bands (behind grid) */}
+            {cohortBands.map((band, i) => {
+              const yTop = yScalePlace(band.low);
+              const yBottom = yScalePlace(band.high);
+              return (
+                <rect
+                  key={i}
+                  x={padding.left}
+                  y={yTop}
+                  width={innerW}
+                  height={Math.max(0, yBottom - yTop)}
+                  fill="currentColor"
+                  fillOpacity={i % 2 === 0 ? 0.04 : 0.08}
+                  className="text-slate-400"
+                />
+              );
+            })}
             {/* Y grid */}
             {yTicks.map((g) => (
               <g key={g}>
                 <line
                   x1={padding.left}
-                  y1={yScaleForChart(g)}
+                  y1={yScalePlace(g)}
                   x2={padding.left + innerW}
-                  y2={yScaleForChart(g)}
+                  y2={yScalePlace(g)}
                   stroke="currentColor"
                   strokeOpacity={0.12}
                   strokeDasharray="2 2"
                 />
                 <text
                   x={padding.left - 6}
-                  y={yScaleForChart(g)}
+                  y={yScalePlace(g)}
                   textAnchor="end"
                   dominantBaseline="middle"
                   className="fill-slate-400 dark:fill-slate-500 text-[10px]"
                 >
-                  {metric === "total-placement" ? String(g) : metric === "gap-sec" ? g.toFixed(0) + "s" : g.toFixed(0)}
+                  {g}
                 </text>
               </g>
             ))}
@@ -605,7 +493,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               transform={`rotate(-90, ${padding.left - 8}, ${padding.top + innerH / 2})`}
               className="fill-slate-500 dark:fill-slate-400 text-[10px]"
             >
-              {cfg.yLabel}
+              Place (all MS or all HS)
             </text>
 
             {/* X labels */}
@@ -623,7 +511,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
             {/* Lines */}
             {seriesToShow.map((s) => {
-              const pts = s.points.map((p) => ({ x: xScale(p.raceIndex), y: yScaleForChart(pointY(p, metric)) }));
+              const pts = s.points.map((p) => ({ x: xScale(p.raceIndex), y: yScalePlace(p.totalPlace) }));
               const pathD = smoothPath(pts);
               const isHovered = hoveredKey === s.key;
               const color = isHovered ? "rgb(14, 165, 233)" : colorForKey(s.key);
@@ -682,6 +570,80 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             </div>
           )}
 
+          {selectedKeys.size === 1 && (() => {
+            const s = filteredSeries.find((x) => selectedKeys.has(x.key));
+            if (!s) return null;
+            const cohortData = s.points.map((p) => cohortAtPoint(p, cohortSize));
+            const avgPct = cohortData.length ? cohortData.reduce((a, c) => a + c.cohortPct, 0) / cohortData.length : 0;
+            const outUnder = avgPct > 55 ? "outperforming" : avgPct < 45 ? "underperforming" : "middle";
+            const w = Math.max(200, Math.min(400, innerW));
+            const h = 80;
+            const pad = { t: 8, r: 8, b: 20, l: 28 };
+            const iw = w - pad.l - pad.r;
+            const ih = h - pad.t - pad.b;
+            const maxPct = 100;
+            const yPct = (pct: number) => pad.t + (1 - pct / maxPct) * ih;
+            const xRace = (i: number) => pad.l + (i / Math.max(1, cohortData.length - 1)) * iw;
+            const pathD = cohortData.length
+              ? "M " + cohortData.map((c, i) => `${xRace(i)} ${yPct(c.cohortPct)}`).join(" L ")
+              : "";
+            return (
+              <div className="mt-3 mb-3 p-3 rounded-lg border border-sky-200 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/20">
+                <div className="text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
+                  Within-cohort: {s.name}
+                </div>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={
+                        "text-sm font-medium " +
+                        (outUnder === "outperforming"
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : outUnder === "underperforming"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-slate-600 dark:text-slate-400")
+                      }
+                    >
+                      {outUnder === "outperforming"
+                        ? "Outperforming cohort"
+                        : outUnder === "underperforming"
+                          ? "Underperforming cohort"
+                          : "Middle of cohort"}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400 text-xs">
+                      — avg {Math.round(avgPct)}th percentile in cohort
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    {s.points.map((p, i) => {
+                      const c = cohortAtPoint(p, cohortSize);
+                      return (
+                        <span key={i} title={`${p.raceName}: ${c.cohortLabel}, ${c.placeInCohort}/${c.cohortSizeInBand} in cohort`}>
+                          {shortLabels[p.raceIndex]}: {c.placeInCohort}/{c.cohortSizeInBand}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <svg width={w} height={h} className="overflow-visible">
+                    <line x1={pad.l} y1={yPct(50)} x2={pad.l + iw} y2={yPct(50)} stroke="currentColor" strokeOpacity={0.2} strokeDasharray="2 2" />
+                    <text x={pad.l - 4} y={yPct(100)} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">100</text>
+                    <text x={pad.l - 4} y={yPct(50)} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">50</text>
+                    <text x={pad.l - 4} y={yPct(0)} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">0</text>
+                    <path d={pathD} fill="none" stroke="rgb(14, 165, 233)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    {cohortData.map((c, i) => (
+                      <circle key={i} cx={xRace(i)} cy={yPct(c.cohortPct)} r={3} fill="rgb(14, 165, 233)" />
+                    ))}
+                  </svg>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Cohort percentile by race (100 = 1st in band). Line at 50 = cohort median.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 mb-3">
             Click riders below to show only them in the graph. Selected riders appear at the top of the list. Hover a line to see rider.
           </p>
@@ -719,8 +681,12 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               {listSorted.map((s) => {
                 const isShown = selectedKeys.size === 0 || selectedKeys.has(s.key);
                 const color = colorForKey(s.key);
-                const imp = seriesImprovement(s, metric);
-                const improved = (metric === "gap-sec" ? imp <= 0 : imp >= 0);
+                const improved = s.improvement >= 0;
+                const impStr = (s.improvement >= 0 ? "−" : "+") + Math.abs(Math.round(s.improvement));
+                const firstCohort = cohortAtPoint(s.points[0]!, cohortSize);
+                const lastCohort = cohortAtPoint(s.points[s.points.length - 1]!, cohortSize);
+                const cohortChange = firstCohort.cohortIndex - lastCohort.cohortIndex;
+                const cohortStr = cohortChange === 0 ? "—" : (cohortChange > 0 ? "+" : "") + cohortChange;
                 return (
                   <div
                     key={s.key}
@@ -756,6 +722,12 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                     <span className={"shrink-0 truncate max-w-36 " + regionTextClass(s.region)}>
                       {s.team}
                     </span>
+                    <span className="shrink-0 text-slate-500 dark:text-slate-400 text-xs" title={`Cohort ${lastCohort.cohortLabel}`}>
+                      {lastCohort.cohortLabel}
+                    </span>
+                    <span className="shrink-0 text-slate-500 dark:text-slate-400 text-xs font-mono" title="Cohort change">
+                      {cohortStr}
+                    </span>
                     <span className="shrink-0 text-slate-500 dark:text-slate-400 text-xs">
                       {s.points.length} races
                     </span>
@@ -765,7 +737,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                         (improved ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")
                       }
                     >
-                      {cfg.formatImprovement(imp)}
+                      {impStr}
                     </span>
                   </div>
                 );
