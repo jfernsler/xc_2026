@@ -3,7 +3,13 @@ import { REGION_MAP } from "../constants/regions";
 import { detectCategory } from "./category";
 import { parseTime } from "./time";
 
-/** Parse NICA-style race results CSV into Rider rows */
+const DNF_MARKERS = /^(PULLED|DNF|DNS|DQ)$/i;
+
+function isDnfOrPulled(...values: (string | undefined)[]): boolean {
+  return values.some((s) => DNF_MARKERS.test((s ?? "").trim()));
+}
+
+/** Parse NICA-style race results CSV into Rider rows. PULLED/DNF rows get totalTime = null. */
 export function parseCSV(text: string): Rider[] {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (!lines.length) return [];
@@ -17,6 +23,8 @@ export function parseCSV(text: string): Rider[] {
     const catRaw = (c[2] ?? "").trim();
     const cat = grade === "ms" ? "ms" : detectCategory(catRaw);
     const team = (c[6] ?? "").trim().toUpperCase();
+    const totalTimeRaw = parseTime(c[14]);
+    const dnf = isDnfOrPulled(c[9], c[10], c[11], c[14]);
     rows.push({
       id: c[0] + "-" + c[3] + "-" + c[4] + "-" + i,
       race: parseInt(c[0], 10) || 1,
@@ -34,7 +42,7 @@ export function parseCSV(text: string): Rider[] {
       lap1: parseTime(c[9]),
       lap2: parseTime(c[10]),
       lap3: parseTime(c[11]),
-      totalTime: parseTime(c[14]),
+      totalTime: dnf ? null : totalTimeRaw,
       penalty: (c[13] ?? "").trim(),
     });
   }

@@ -46,8 +46,23 @@ function parseSocalCsv(text: string): CsvRow[] {
   return rows;
 }
 
-/** Derive total time from TIME column or sum of lap times (handles 2024-style CSVs where TIME is empty). */
+const DNF_MARKERS = /^(PULLED|DNF|DNS|DQ)$/i;
+
+/** True if row has PULLED/DNF etc. — rider did not finish; total time must not be used for placement. */
+function isDnfOrPulled(row: CsvRow): boolean {
+  const v = (s: string | undefined) => (s ?? "").trim().toUpperCase();
+  return (
+    DNF_MARKERS.test(v(row.TIME)) ||
+    DNF_MARKERS.test(v(row.LAP1)) ||
+    DNF_MARKERS.test(v(row.LAP2)) ||
+    DNF_MARKERS.test(v(row.LAP3)) ||
+    DNF_MARKERS.test(v(row.LAP4))
+  );
+}
+
+/** Derive total time from TIME column or sum of lap times (handles 2024-style CSVs where TIME is empty). Excludes PULLED/DNF. */
 function deriveTotalTime(row: CsvRow): number | null {
+  if (isDnfOrPulled(row)) return null;
   const fromTime = parseTime(row.TIME);
   if (fromTime != null) return fromTime;
   const lapTimes = [row.LAP1, row.LAP2, row.LAP3, row.LAP4]

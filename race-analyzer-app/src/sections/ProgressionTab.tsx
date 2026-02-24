@@ -151,7 +151,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set()); // empty = all years
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(800);
-  const [metric, setMetric] = useState<ProgressionMetric>("gap-pct");
+  const [metric, setMetric] = useState<ProgressionMetric>("total-placement");
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -447,6 +447,10 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     "rgb(20, 184, 166)",
     "rgb(251, 146, 60)",
   ];
+  const colorForKey = (key: string) => {
+    const idx = filteredSeries.findIndex((s) => s.key === key);
+    return idx >= 0 ? colors[idx % colors.length] : "var(--tw-slate-400)";
+  };
 
   return (
     <div>
@@ -618,11 +622,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             ))}
 
             {/* Lines */}
-            {seriesToShow.map((s, i) => {
+            {seriesToShow.map((s) => {
               const pts = s.points.map((p) => ({ x: xScale(p.raceIndex), y: yScaleForChart(pointY(p, metric)) }));
               const pathD = smoothPath(pts);
               const isHovered = hoveredKey === s.key;
-              const color = isHovered ? "rgb(14, 165, 233)" : colors[i % colors.length];
+              const color = isHovered ? "rgb(14, 165, 233)" : colorForKey(s.key);
               return (
                 <g
                   key={s.key}
@@ -666,11 +670,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
           {showLegend && (
             <div className="flex flex-wrap items-center gap-3 mt-2 mb-1 px-1">
-              {seriesToShow.map((s, i) => (
+              {seriesToShow.map((s) => (
                 <span key={s.key} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
                   <span
                     className="w-3 h-0.5 rounded-full shrink-0"
-                    style={{ backgroundColor: colors[i % colors.length] }}
+                    style={{ backgroundColor: colorForKey(s.key) }}
                   />
                   <span className="truncate max-w-[120px]" title={s.name}>{s.name}</span>
                 </span>
@@ -714,8 +718,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             <div className="max-h-[28rem] overflow-y-auto space-y-1 pr-1">
               {listSorted.map((s) => {
                 const isShown = selectedKeys.size === 0 || selectedKeys.has(s.key);
-                const colorIdx = seriesToShow.findIndex((x) => x.key === s.key);
-                const color = colorIdx >= 0 ? colors[colorIdx % colors.length] : "var(--tw-slate-400)";
+                const color = colorForKey(s.key);
                 const imp = seriesImprovement(s, metric);
                 const improved = (metric === "gap-sec" ? imp <= 0 : imp >= 0);
                 return (
