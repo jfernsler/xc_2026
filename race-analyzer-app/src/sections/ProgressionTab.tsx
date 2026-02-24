@@ -58,32 +58,6 @@ export interface RiderProgressionPoint {
   fieldSize: number;
 }
 
-/** Cohort band for a given cohort size. Derived from totalPlace + fieldSize. */
-export interface CohortAtPoint {
-  cohortIndex: number;
-  cohortLabel: string;
-  placeInCohort: number;
-  cohortSizeInBand: number;
-  cohortPct: number;
-}
-
-function cohortAtPoint(p: RiderProgressionPoint, cohortSize: number): CohortAtPoint {
-  const cohortIndex = Math.ceil(p.totalPlace / cohortSize);
-  const placeInCohort = p.totalPlace - (cohortIndex - 1) * cohortSize;
-  const cohortSizeInBand = Math.max(
-    1,
-    Math.min(cohortSize, p.fieldSize - (cohortIndex - 1) * cohortSize)
-  );
-  const cohortPct =
-    cohortSizeInBand <= 1
-      ? 100
-      : 100 * (1 - (placeInCohort - 1) / cohortSizeInBand);
-  const start = (cohortIndex - 1) * cohortSize + 1;
-  const end = Math.min(cohortIndex * cohortSize, p.fieldSize);
-  const cohortLabel = end > start ? `${start}–${end}` : `${start}`;
-  return { cohortIndex, cohortLabel, placeInCohort, cohortSizeInBand, cohortPct };
-}
-
 export interface RiderProgressionSeries {
   key: string;
   name: string;
@@ -91,6 +65,12 @@ export interface RiderProgressionSeries {
   region: string;
   points: RiderProgressionPoint[];
   improvement: number;
+}
+
+/** True if both series have the same set of races (same raceIds in same order). */
+function sameRaceSet(a: RiderProgressionSeries, b: RiderProgressionSeries): boolean {
+  if (a.points.length !== b.points.length) return false;
+  return a.points.every((p, i) => p.raceId === b.points[i]!.raceId);
 }
 
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
@@ -103,11 +83,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  /** Cohort size for banding (e.g. 10 = cohorts 1–10, 11–20, …). */
-  const [cohortSize, setCohortSize] = useState(10);
-  const COHORT_SIZE_MIN = 5;
-  const COHORT_SIZE_MAX = 30;
-  const COHORT_SIZE_STEP = 5;
 
   const availableYears = useMemo(
     () => _.sortBy(_.uniq(raceOptions.map((r) => r.year).filter((y): y is number => y != null))),
@@ -264,6 +239,37 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     return filteredSeries.filter((s) => selectedKeys.has(s.key));
   }, [filteredSeries, selectedKeys]);
 
+  /** When exactly one rider is selected: their cohort (same race set), cohort avg place per race (excluding rider), and contribution vs cohort. */
+  const singleRiderCohort = useMemo(() => {
+    if (selectedKeys.size !== 1) return null;
+    const selected = filteredSeries.find((s) => selectedKeys.has(s.key));
+    if (!selected) return null;
+    const cohort = filteredSeries.filter((s) => sameRaceSet(s, selected));
+    const cohortRest = cohort.filter((s) => s.key !== selected.key);
+    if (cohortRest.length === 0) return { selected, cohort, cohortRest, cohortAvgByRaceId: null, cohortImprovement: 0, contribution: 0 };
+    const cohortAvgByRaceId = new Map<number, number>();
+    selected.points.forEach((p) => {
+      const places = cohortRest
+        .map((s) => s.points.find((pt) => pt.raceId === p.raceId)?.totalPlace)
+        .filter((n): n is number => n != null);
+      if (places.length > 0) cohortAvgByRaceId.set(p.raceId, _.mean(places));
+    });
+    const firstRaceId = selected.points[0]!.raceId;
+    const lastRaceId = selected.points[selected.points.length - 1]!.raceId;
+    const firstAvg = cohortAvgByRaceId.get(firstRaceId) ?? 0;
+    const lastAvg = cohortAvgByRaceId.get(lastRaceId) ?? 0;
+    const cohortImprovement = firstAvg - lastAvg;
+    const contribution = selected.improvement - cohortImprovement;
+    return {
+      selected,
+      cohort,
+      cohortRest,
+      cohortAvgByRaceId,
+      cohortImprovement,
+      contribution,
+    };
+  }, [filteredSeries, selectedKeys]);
+
   const chartHeight = 380;
   const padding = { top: 24, right: 24, bottom: 48, left: 52 };
   const innerW = Math.max(0, chartWidth - padding.left - padding.right);
@@ -291,17 +297,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     }
     return { maxY: maxPlace, yTicks: _.uniq(ticks).sort((a, b) => a - b) };
   }, [seriesToShow]);
-
-  /** Cohort band boundaries (place range) for background shading. */
-  const cohortBands = useMemo(() => {
-    const bands: { low: number; high: number }[] = [];
-    for (let k = 1; (k - 1) * cohortSize + 1 <= maxY; k++) {
-      const low = (k - 1) * cohortSize + 1;
-      const high = Math.min(k * cohortSize, maxY);
-      bands.push({ low, high });
-    }
-    return bands;
-  }, [cohortSize, maxY]);
 
   const xScale = (raceIndex: number) =>
     padding.left + (raceIndex / Math.max(1, raceOrder.length - 1)) * innerW;
@@ -367,19 +362,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             ))}
           </select>
         </label>
-        <label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
-          Cohort size
-          <input
-            type="range"
-            min={COHORT_SIZE_MIN}
-            max={COHORT_SIZE_MAX}
-            step={COHORT_SIZE_STEP}
-            value={cohortSize}
-            onChange={(e) => setCohortSize(Number(e.target.value))}
-            className="w-24 accent-sky-500"
-          />
-          <span className="tabular-nums w-6 text-slate-700 dark:text-slate-300">{cohortSize}</span>
-        </label>
         <span className="text-xs text-slate-400 dark:text-slate-500">
           Riders matched by name only. {filteredSeries.length} riders with 2+ races.
           {selectedKeys.size > 0 && ` Showing ${selectedKeys.size} selected in graph.`}
@@ -392,7 +374,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
           Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          <strong>Cohort size</strong> splits the field into bands (e.g. 10 = 1–10, 11–20, …). Use the slider to change band size. Chart bands and “within-cohort” (place and percentile inside your band) use this setting. Select one rider to see whether they’re outperforming or underperforming their cohort over time.
+          <strong>Cohort</strong> = riders who race the same set of races (same schedule). Select one rider to see their cohort size and <strong>contribution</strong>: how much they improved vs the cohort average (positive = contributing up, negative = contributing down). You can see their place vs the group average at each race.
         </p>
       </div>
 
@@ -406,9 +388,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             if (!s) return null;
             const improved = s.improvement >= 0;
             const impStr = (s.improvement >= 0 ? "−" : "+") + Math.abs(Math.round(s.improvement));
-            const firstCohort = cohortAtPoint(s.points[0]!, cohortSize);
-            const lastCohort = cohortAtPoint(s.points[s.points.length - 1]!, cohortSize);
-            const cohortChange = firstCohort.cohortIndex - lastCohort.cohortIndex;
             return (
               <div
                 className="pointer-events-none fixed z-50 px-2 py-1.5 rounded bg-slate-800 dark:bg-slate-700 text-white text-xs shadow-lg border border-slate-600"
@@ -418,22 +397,8 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                 <div className="text-slate-300 dark:text-slate-400">
                   {s.points.map((p) => p.totalPlace).join(" → ")}
                 </div>
-                <div className="text-slate-400 dark:text-slate-500 mt-0.5">
-                  Cohort: {s.points.map((p) => cohortAtPoint(p, cohortSize).cohortLabel).join(" → ")}
-                  {s.points.some((p) => {
-                    const c = cohortAtPoint(p, cohortSize);
-                    return c.placeInCohort !== c.cohortSizeInBand;
-                  }) && (
-                    <> · In cohort: {s.points.map((p) => `${cohortAtPoint(p, cohortSize).placeInCohort}/${cohortAtPoint(p, cohortSize).cohortSizeInBand}`).join(" → ")}</>
-                  )}
-                </div>
                 <div className={improved ? "text-emerald-400" : "text-amber-400"}>
                   {improved ? "Improved " : ""}{impStr} vs first race
-                  {cohortChange !== 0 && (
-                    <span className="text-slate-400 dark:text-slate-500">
-                      {" "}· {cohortChange > 0 ? "Up" : "Down"} {Math.abs(cohortChange)} cohort{Math.abs(cohortChange) !== 1 ? "s" : ""}
-                    </span>
-                  )}
                 </div>
               </div>
             );
@@ -446,23 +411,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             className="w-full overflow-visible"
             style={{ minHeight: chartHeight, maxHeight: chartHeight }}
           >
-            {/* Cohort bands (behind grid) */}
-            {cohortBands.map((band, i) => {
-              const yTop = yScalePlace(band.low);
-              const yBottom = yScalePlace(band.high);
-              return (
-                <rect
-                  key={i}
-                  x={padding.left}
-                  y={yTop}
-                  width={innerW}
-                  height={Math.max(0, yBottom - yTop)}
-                  fill="currentColor"
-                  fillOpacity={i % 2 === 0 ? 0.04 : 0.08}
-                  className="text-slate-400"
-                />
-              );
-            })}
             {/* Y grid */}
             {yTicks.map((g) => (
               <g key={g}>
@@ -509,6 +457,29 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               </text>
             ))}
 
+            {/* Cohort average line (when one rider selected and cohort has others) */}
+            {singleRiderCohort?.cohortAvgByRaceId && singleRiderCohort.cohortRest.length > 0 && (() => {
+              const pts = singleRiderCohort.selected.points.map((p) => {
+                const avg = singleRiderCohort.cohortAvgByRaceId.get(p.raceId);
+                return avg != null ? { x: xScale(p.raceIndex), y: yScalePlace(avg) } : null;
+              }).filter((p): p is { x: number; y: number } => p != null);
+              if (pts.length < 2) return null;
+              return (
+                <g>
+                  <path
+                    d={smoothPath(pts)}
+                    fill="none"
+                    stroke="var(--tw-slate-400)"
+                    strokeWidth={1.5}
+                    strokeOpacity={0.8}
+                    strokeDasharray="6 4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <text x={padding.left + innerW - 2} y={pts[pts.length - 1]!.y} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">Cohort avg</text>
+                </g>
+              );
+            })()}
             {/* Lines */}
             {seriesToShow.map((s) => {
               const pts = s.points.map((p) => ({ x: xScale(p.raceIndex), y: yScalePlace(p.totalPlace) }));
@@ -570,76 +541,95 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             </div>
           )}
 
-          {selectedKeys.size === 1 && (() => {
-            const s = filteredSeries.find((x) => selectedKeys.has(x.key));
-            if (!s) return null;
-            const cohortData = s.points.map((p) => cohortAtPoint(p, cohortSize));
-            const avgPct = cohortData.length ? cohortData.reduce((a, c) => a + c.cohortPct, 0) / cohortData.length : 0;
-            const outUnder = avgPct > 55 ? "outperforming" : avgPct < 45 ? "underperforming" : "middle";
+          {singleRiderCohort && (() => {
+            const { selected, cohortRest, cohortAvgByRaceId, cohortImprovement, contribution } = singleRiderCohort;
+            const hasCohort = cohortRest.length > 0 && cohortAvgByRaceId != null;
+            const contributingUp = contribution > 0;
+            const contributingDown = contribution < 0;
             const w = Math.max(200, Math.min(400, innerW));
-            const h = 80;
-            const pad = { t: 8, r: 8, b: 20, l: 28 };
+            const h = 72;
+            const pad = { t: 6, r: 8, b: 18, l: 32 };
             const iw = w - pad.l - pad.r;
             const ih = h - pad.t - pad.b;
-            const maxPct = 100;
-            const yPct = (pct: number) => pad.t + (1 - pct / maxPct) * ih;
-            const xRace = (i: number) => pad.l + (i / Math.max(1, cohortData.length - 1)) * iw;
-            const pathD = cohortData.length
-              ? "M " + cohortData.map((c, i) => `${xRace(i)} ${yPct(c.cohortPct)}`).join(" L ")
-              : "";
+            const perRace = selected.points.map((p) => {
+              const avg = cohortAvgByRaceId?.get(p.raceId);
+              const ahead = avg != null ? avg - p.totalPlace : null;
+              return { raceIndex: p.raceIndex, place: p.totalPlace, avg: avg ?? 0, ahead };
+            });
+            const maxPlace = Math.max(maxY, ...perRace.map((r) => r.avg));
+            const yPlace = (pl: number) => pad.t + (pl - 1) / Math.max(1, maxPlace - 1) * ih;
+            const xRace = (i: number) => pad.l + (i / Math.max(1, perRace.length - 1)) * iw;
+            const riderPath = perRace.length ? "M " + perRace.map((r, i) => `${xRace(i)} ${yPlace(r.place)}`).join(" L ") : "";
+            const avgPath = cohortAvgByRaceId && perRace.length ? "M " + perRace.map((r, i) => `${xRace(i)} ${yPlace(r.avg)}`).join(" L ") : "";
             return (
               <div className="mt-3 mb-3 p-3 rounded-lg border border-sky-200 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/20">
                 <div className="text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Within-cohort: {s.name}
+                  Cohort: {selected.name}
+                  {hasCohort ? ` vs ${cohortRest.length} rider${cohortRest.length !== 1 ? "s" : ""} with same race schedule` : " — no other riders with the same race schedule"}
                 </div>
+                {!hasCohort && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Contribution is shown only when at least one other rider raced the exact same set of races.</p>
+                )}
+                {hasCohort && (
+                <>
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-2">
                     <span
                       className={
                         "text-sm font-medium " +
-                        (outUnder === "outperforming"
+                        (contributingUp
                           ? "text-emerald-600 dark:text-emerald-400"
-                          : outUnder === "underperforming"
+                          : contributingDown
                             ? "text-amber-600 dark:text-amber-400"
                             : "text-slate-600 dark:text-slate-400")
                       }
                     >
-                      {outUnder === "outperforming"
-                        ? "Outperforming cohort"
-                        : outUnder === "underperforming"
-                          ? "Underperforming cohort"
-                          : "Middle of cohort"}
+                      {contributingUp
+                        ? "Contributing up"
+                        : contributingDown
+                          ? "Contributing down"
+                          : "In line with cohort"}
                     </span>
                     <span className="text-slate-500 dark:text-slate-400 text-xs">
-                      — avg {Math.round(avgPct)}th percentile in cohort
+                      {contribution > 0 ? "+" : ""}{contribution.toFixed(1)} vs cohort avg
+                      (rider improved {selected.improvement > 0 ? "−" : "+"}{Math.abs(selected.improvement)} places; cohort avg improved {cohortImprovement > 0 ? "−" : "+"}{Math.abs(cohortImprovement).toFixed(1)} places)
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    {s.points.map((p, i) => {
-                      const c = cohortAtPoint(p, cohortSize);
-                      return (
-                        <span key={i} title={`${p.raceName}: ${c.cohortLabel}, ${c.placeInCohort}/${c.cohortSizeInBand} in cohort`}>
-                          {shortLabels[p.raceIndex]}: {c.placeInCohort}/{c.cohortSizeInBand}
-                        </span>
-                      );
-                    })}
+                  {cohortAvgByRaceId && (
+                    <div className="flex items-baseline gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                      {selected.points.map((p, i) => {
+                        const avg = cohortAvgByRaceId.get(p.raceId);
+                        const ahead = avg != null ? avg - p.totalPlace : null;
+                        return (
+                          <span key={i} title={`${p.raceName}: you ${p.totalPlace}, cohort avg ${avg?.toFixed(1) ?? "—"}`}>
+                            {shortLabels[p.raceIndex]}: {p.totalPlace} vs {avg != null ? avg.toFixed(1) : "—"}
+                            {ahead != null && ahead !== 0 && (
+                              <span className={ahead > 0 ? "text-emerald-600" : "text-amber-600"}>
+                                {" "}({ahead > 0 ? "ahead" : "behind"} {Math.abs(ahead).toFixed(1)})
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {perRace.length > 0 && cohortAvgByRaceId && (
+                  <div className="mt-2">
+                    <svg width={w} height={h} className="overflow-visible">
+                      <path d={avgPath} fill="none" stroke="var(--tw-slate-400)" strokeWidth={1} strokeOpacity={0.7} strokeDasharray="4 3" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d={riderPath} fill="none" stroke="rgb(14, 165, 233)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      {perRace.map((r, i) => (
+                        <circle key={i} cx={xRace(i)} cy={yPlace(r.place)} r={2.5} fill="rgb(14, 165, 233)" />
+                      ))}
+                    </svg>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      Solid = your place; dashed = cohort average place (lower = better).
+                    </p>
                   </div>
-                </div>
-                <div className="mt-2">
-                  <svg width={w} height={h} className="overflow-visible">
-                    <line x1={pad.l} y1={yPct(50)} x2={pad.l + iw} y2={yPct(50)} stroke="currentColor" strokeOpacity={0.2} strokeDasharray="2 2" />
-                    <text x={pad.l - 4} y={yPct(100)} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">100</text>
-                    <text x={pad.l - 4} y={yPct(50)} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">50</text>
-                    <text x={pad.l - 4} y={yPct(0)} textAnchor="end" dominantBaseline="middle" className="fill-slate-400 text-[9px]">0</text>
-                    <path d={pathD} fill="none" stroke="rgb(14, 165, 233)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                    {cohortData.map((c, i) => (
-                      <circle key={i} cx={xRace(i)} cy={yPct(c.cohortPct)} r={3} fill="rgb(14, 165, 233)" />
-                    ))}
-                  </svg>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Cohort percentile by race (100 = 1st in band). Line at 50 = cohort median.
-                  </p>
-                </div>
+                )}
+                </>
+                )}
               </div>
             );
           })()}
@@ -683,10 +673,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                 const color = colorForKey(s.key);
                 const improved = s.improvement >= 0;
                 const impStr = (s.improvement >= 0 ? "−" : "+") + Math.abs(Math.round(s.improvement));
-                const firstCohort = cohortAtPoint(s.points[0]!, cohortSize);
-                const lastCohort = cohortAtPoint(s.points[s.points.length - 1]!, cohortSize);
-                const cohortChange = firstCohort.cohortIndex - lastCohort.cohortIndex;
-                const cohortStr = cohortChange === 0 ? "—" : (cohortChange > 0 ? "+" : "") + cohortChange;
                 return (
                   <div
                     key={s.key}
@@ -721,12 +707,6 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                     </span>
                     <span className={"shrink-0 truncate max-w-36 " + regionTextClass(s.region)}>
                       {s.team}
-                    </span>
-                    <span className="shrink-0 text-slate-500 dark:text-slate-400 text-xs" title={`Cohort ${lastCohort.cohortLabel}`}>
-                      {lastCohort.cohortLabel}
-                    </span>
-                    <span className="shrink-0 text-slate-500 dark:text-slate-400 text-xs font-mono" title="Cohort change">
-                      {cohortStr}
                     </span>
                     <span className="shrink-0 text-slate-500 dark:text-slate-400 text-xs">
                       {s.points.length} races
