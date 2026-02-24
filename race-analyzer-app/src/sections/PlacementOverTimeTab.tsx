@@ -109,6 +109,7 @@ export function PlacementOverTimeTab({
   }, [filtered, fC, raceOrder, raceIdToIndex, raceOptions]);
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   const chartWidth = Math.max(400, raceOrder.length * 80);
   const chartHeight = Math.max(
@@ -172,7 +173,26 @@ export function PlacementOverTimeTab({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[500px] bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-600 p-4">
+          <div
+            className="min-w-[500px] bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-600 p-4 relative"
+            onMouseMove={(e) => setTooltipPos({ x: e.clientX, y: e.clientY })}
+          >
+            {hoveredKey && (() => {
+              const s = series.find((x) => x.key === hoveredKey);
+              if (!s) return null;
+              return (
+                <div
+                  className="pointer-events-none fixed z-50 px-2 py-1.5 rounded bg-slate-800 dark:bg-slate-700 text-white text-xs shadow-lg border border-slate-600"
+                  style={{
+                    left: tooltipPos.x + 12,
+                    top: tooltipPos.y + 12,
+                  }}
+                >
+                  <div className="font-medium">{s.name}</div>
+                  <div className="text-slate-300 dark:text-slate-400">{s.team}</div>
+                </div>
+              );
+            })()}
             <svg width={chartWidth} height={chartHeight} className="overflow-visible">
               {/* Y grid & labels */}
               {maxPlace > 0 && (
