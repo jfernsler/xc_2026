@@ -86,7 +86,8 @@ export function PlacementOverTimeTab({
     const byRace = _.groupBy(data, "race");
     const raceNames = raceOrder.map((id) => raceOptions.find((r) => r.id === id)?.name ?? `Race ${id}`);
     let maxPlace = 0;
-    const keyToPoints = new Map<string, { name: string; team: string; region: string; points: { x: number; y: number; raceId: number }[] }>();
+    type PointItem = { x: number; y: number; raceId: number; contributed?: boolean };
+    const keyToPoints = new Map<string, { name: string; team: string; region: string; points: PointItem[] }>();
     raceOrder.forEach((raceId) => {
       const riders = _.sortBy((byRace[raceId] ?? []).filter((r) => r.totalTime != null), "place");
       riders.forEach((r, idx) => {
@@ -97,7 +98,12 @@ export function PlacementOverTimeTab({
         if (!keyToPoints.has(key)) {
           keyToPoints.set(key, { name: r.name, team: r.team, region: r.region, points: [] });
         }
-        keyToPoints.get(key)!.points.push({ x: raceIdx, y: place, raceId });
+        keyToPoints.get(key)!.points.push({
+          x: raceIdx,
+          y: place,
+          raceId,
+          contributed: contributedIdsByRace?.[raceId]?.has(r.id) ?? false,
+        });
       });
     });
     const series = Array.from(keyToPoints.entries())
@@ -115,7 +121,7 @@ export function PlacementOverTimeTab({
         return aAvg - bAvg;
       });
     return { series, maxPlace, raceNames };
-  }, [filtered, fC, raceOrder, raceIdToIndex, raceOptions]);
+  }, [filtered, fC, raceOrder, raceIdToIndex, raceOptions, contributedIdsByRace]);
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
