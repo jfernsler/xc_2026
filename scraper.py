@@ -3,9 +3,11 @@ Scrape participant data from SoCal Youth Cycling League results.
 Uses the RACE RESULT API (raceresult.com)
 """
 
+import json
+import os
+import re
 import requests
 import pandas as pd
-import re
 
 
 class RaceResultScraper:
@@ -95,11 +97,16 @@ class RaceResultScraper:
         for status_group, categories in data.items():
             # Clean status group name (e.g., "#1_PROTEST PERIOD" -> "PROTEST PERIOD")
             status = re.sub(r'^#\d+_', '', status_group)
-            
-            for category_key, rows in categories.items():
-                # Clean category name (e.g., "#1_Varsity Boys" -> "Varsity Boys")
-                category = re.sub(r'^#\d+_', '', category_key)
-                
+            # Newer API: categories is dict (category_key -> rows). Older API: categories is list of rows.
+            if isinstance(categories, list):
+                category_blocks = [("", categories)]
+            else:
+                category_blocks = [
+                    (re.sub(r'^#\d+_', '', k), rows)
+                    for k, rows in categories.items()
+                ]
+            for category_name, rows in category_blocks:
+                category = category_name or "All"
                 for row in rows:
                     # Skip summary rows (single integer = count of remaining)
                     if isinstance(row, int):
@@ -153,6 +160,8 @@ class RaceResultScraper:
         df = self.parse_results(raw)
         print(f"  Found {len(df)} participants")
         
+        if output_file is None:
+            output_file = self.get_event_filename()
         if output_file:
             df.to_csv(output_file, index=False)
             print(f"  Saved to {output_file}")
@@ -170,6 +179,23 @@ class RaceResultScraper:
         if not self.config:
             self.get_config()
         return self.config.get("contests", {})
+
+    def get_event_name(self) -> str:
+        """Race name from API (includes year, e.g. 'Race 2 - Vail Lake Challenge 2026')."""
+        if not self.config:
+            self.get_config()
+        return self.config.get("eventname", "Unknown")
+
+    def get_event_filename(self, extension: str = ".csv", directory: str = "") -> str:
+        """Safe filename from event name and year (from API eventname)."""
+        name = self.get_event_name()
+        # Sanitize: spaces -> underscores, drop chars unsafe in filenames
+        safe = re.sub(r'[\s]+', '_', name)
+        safe = re.sub(r'[\\/:*?"<>|]', '', safe)
+        safe = re.sub(r'_+', '_', safe).strip('_') or "race_results"
+        if directory:
+            return os.path.join(directory, safe + extension)
+        return safe + extension
 
 
 def scrape_event(event_id: int, output_file: str = None) -> pd.DataFrame:
@@ -190,26 +216,58 @@ def scrape_event(event_id: int, output_file: str = None) -> pd.DataFrame:
     return scraper.scrape(output_file)
 
 
+def scrape_all_events(
+    event_ids: list[int],
+    output_dir: str,
+) -> list[dict]:
+    """
+    Scrape each event, save CSVs into output_dir with event-based filenames,
+    and write manifest.json there. Returns manifest list (id, name, file).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    manifest = []
+    for eid in event_ids:
+        scraper = RaceResultScraper(eid)
+        csv_path = scraper.get_event_filename(extension=".csv", directory=output_dir)
+        scraper.scrape(output_file=csv_path)
+        name = scraper.get_event_name()
+        year_match = re.search(r"\b(19|20)\d{2}\b", name)
+        year = int(year_match.group(0)) if year_match else None
+        manifest.append({
+            "id": eid,
+            "name": name,
+            "year": year,
+            "file": os.path.basename(csv_path),
+        })
+    manifest_path = os.path.join(output_dir, "manifest.json")
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"  Wrote {manifest_path}")
+    return manifest
+
+
+# --- Edit these; run: python3 scraper.py -------------------------------------
+EVENT_IDS = [
+    270161,
+    280111,
+    282832,
+    284709,
+    288055,
+    327767,
+    330110,
+    332683,
+    337399,
+    338294,
+    376410,   # Lake Perris, Beach to Boulders - 2026
+    383847,   # Vail Lake, Vail Lake Challenge - 2026
+]
+OUTPUT_DIR = "race-analyzer-app/public/races"
+# -----------------------------------------------------------------------------
+
+
 if __name__ == "__main__":
-    # Example usage
-    EVENT_ID = 383847
-    
-    df = scrape_event(EVENT_ID, output_file="socal_results.csv")
-    
-    print("\n" + "="*60)
-    print("RESULTS PREVIEW")
-    print("="*60)
-    
-    # Show columns
-    print(f"\nColumns: {list(df.columns)}")
-    
-    # Show sample data
-    print(f"\nFirst 10 rows:")
-    if not df.empty:
-        print(df[["PLC", "NAME", "TEAM", "CATEGORY", "TIME"]].head(10).to_string())
-    else:
-        print("No data found!")
-    
-    # Summary by category
-    print(f"\nParticipants by category:")
-    print(df.groupby("CATEGORY").size().sort_values(ascending=False))
+    print("Scraping events:", EVENT_IDS)
+    manifest = scrape_all_events(EVENT_IDS, OUTPUT_DIR)
+    print("\nManifest:")
+    for m in manifest:
+        print(f"  {m['id']}: {m['name']} -> {m['file']}")

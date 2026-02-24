@@ -3,7 +3,7 @@ import _ from "lodash";
 import type { Rider, ScenarioRider, ScenarioChange } from "./types";
 import { getSchoolLevel } from "./constants/schoolLevel";
 import { DEFAULT_MAX_PER_GENDER, DEFAULT_MAX_RIDERS } from "./constants/scoring";
-import { fetchRacesManifest, loadRaceCsv, loadAllRaces, type RaceOption } from "./utils/races";
+import { fetchRacesManifest, loadRaceCsv, loadRacesForYear, loadAllRaces, type RaceOption } from "./utils/races";
 import { allTS } from "./scoring/teamScore";
 import { racePoints } from "./scoring/points";
 import { findMoves } from "./moves/findMoves";
@@ -17,6 +17,7 @@ import { AnalysisTab } from "./sections/AnalysisTab";
 import { ReportTab } from "./sections/ReportTab";
 import { CumulativeTeamsTab, type CumulativeTeamRow } from "./sections/CumulativeTeamsTab";
 import { PlacementOverTimeTab } from "./sections/PlacementOverTimeTab";
+import { ProgressionTab } from "./sections/ProgressionTab";
 
 const REGIONS = ["North", "Central", "South", "Other"];
 
@@ -79,28 +80,48 @@ export default function App() {
       .finally(() => setLoading(false));
   };
 
-  const loadAll = () => {
+  const loadAllForYear = (year: number) => {
+    setLoadError(null);
+    setLoading(true);
+    loadRacesForYear(raceOptions, year)
+      .then((riders) => {
+        setRawData(riders);
+        setTab("cumulative-teams");
+      })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load races"))
+      .finally(() => setLoading(false));
+  };
+
+  const loadAllYears = () => {
     setLoadError(null);
     setLoading(true);
     loadAllRaces(raceOptions)
       .then((riders) => {
         setRawData(riders);
-        setTab("cumulative-teams");
+        setTab("progression");
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load all races"))
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load all years"))
       .finally(() => setLoading(false));
   };
 
   const handleRaceSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     setSelectedRaceId(id);
-    if (id === "all") {
-      loadAll();
+    if (id === "all-years") {
+      loadAllYears();
+    } else if (id.startsWith("all-")) {
+      const year = parseInt(id.slice(4), 10);
+      if (!isNaN(year)) loadAllForYear(year);
     } else {
       const race = raceOptions.find((r) => String(r.id) === id);
       if (race) loadRace(race);
     }
   };
+
+  const years = useMemo(
+    () => _.sortBy(_.uniq(raceOptions.map((r) => r.year).filter((y): y is number => y != null))),
+    [raceOptions]
+  );
 
   const hsData = useMemo(() => rawData.filter((r) => getSchoolLevel(r) === "hs"), [rawData]);
   const gf = useMemo(() => {
@@ -352,7 +373,24 @@ export default function App() {
 
         {rawData.length > 0 && (
           <>
-            {selectedRaceId === "all" ? (
+            {selectedRaceId === "all-years" ? (
+              <>
+                {[["progression", "📈 Progression"]].map(([k, v]) => (
+                  <button
+                    key={k}
+                    onClick={() => setTab(k)}
+                    className={
+                      "px-3 h-10 text-xs font-medium whitespace-nowrap border-b-2 transition " +
+                      (tab === k
+                        ? "border-sky-500 text-sky-600 dark:border-sky-400 dark:text-sky-300"
+                        : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600")
+                    }
+                  >
+                    {v}
+                  </button>
+                ))}
+              </>
+            ) : selectedRaceId.startsWith("all-") ? (
               <>
                 {CUMULATIVE_TABS.map(([k, v]) => (
                   <button
@@ -440,9 +478,9 @@ export default function App() {
               className="w-9 bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-1.5 py-0.5 text-slate-900 text-[11px]"
             />
           </label>
-          {selectedRaceId === "all" ? (
+          {selectedRaceId === "all-years" ? (
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">All races</span>
+              <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">All years</span>
               <select
                 onChange={(e) => {
                   const id = e.target.value;
@@ -452,7 +490,33 @@ export default function App() {
                 className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-44 disabled:opacity-50"
                 defaultValue=""
               >
-                <option value="">Switch to single race…</option>
+                <option value="">Switch view…</option>
+                {years.map((y) => (
+                  <option key={y} value={`all-${y}`}>All Races {y}</option>
+                ))}
+                {raceOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : selectedRaceId.startsWith("all-") ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                All Races {selectedRaceId.slice(4)}
+              </span>
+              <select
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) handleRaceSelect({ target: { value: id } } as React.ChangeEvent<HTMLSelectElement>);
+                }}
+                disabled={loading || !raceOptions.length}
+                className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-44 disabled:opacity-50"
+                defaultValue=""
+              >
+                <option value="">Switch view…</option>
+                <option value="all-years">All races, all years</option>
                 {raceOptions.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
@@ -468,9 +532,10 @@ export default function App() {
               className="bg-slate-100 border border-slate-200 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1 text-[11px] text-slate-900 w-52 disabled:opacity-50"
             >
               <option value="">Select race…</option>
-              {raceOptions.length > 1 && (
-                <option value="all">All races (cumulative)</option>
-              )}
+              {years.map((y) => (
+                <option key={y} value={`all-${y}`}>All Races {y}</option>
+              ))}
+              <option value="all-years">All races, all years</option>
               {raceOptions.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
@@ -669,6 +734,10 @@ export default function App() {
               onFSchool={setFSchool}
               onHl={setHl}
             />
+          )}
+
+          {tab === "progression" && selectedRaceId === "all-years" && (
+            <ProgressionTab rawData={rawData} raceOptions={raceOptions} />
           )}
         </div>
       </div>

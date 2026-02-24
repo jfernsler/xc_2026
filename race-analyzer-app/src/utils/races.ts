@@ -7,6 +7,7 @@ export interface RaceOption {
   id: number;
   name: string;
   file: string;
+  year?: number;
 }
 
 /** Row shape from scraper CSV (STATUS_GROUP, CATEGORY, BIB, PLC, NAME, TEAM, LAPS, LAP1..LAP4, PEN, TIME) */
@@ -96,9 +97,20 @@ export async function loadRaceCsv(race: RaceOption): Promise<Rider[]> {
   return csvRowsToRiders(rows, race.id);
 }
 
-/** Load all races from manifest and return concatenated riders (multi-race data). */
-export async function loadAllRaces(races: RaceOption[]): Promise<Rider[]> {
+/** Load races from a list and return concatenated riders. */
+export async function loadRaces(races: RaceOption[]): Promise<Rider[]> {
   if (!races.length) return [];
   const results = await Promise.all(races.map((r) => loadRaceCsv(r)));
   return results.flat();
+}
+
+/** Load all races for a given year. */
+export async function loadRacesForYear(raceOptions: RaceOption[], year: number): Promise<Rider[]> {
+  const forYear = raceOptions.filter((r) => r.year === year);
+  return loadRaces(forYear);
+}
+
+/** Load all races from manifest (all years). */
+export async function loadAllRaces(races: RaceOption[]): Promise<Rider[]> {
+  return loadRaces(races);
 }
