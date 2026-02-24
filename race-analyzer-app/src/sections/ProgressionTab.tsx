@@ -194,25 +194,27 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     const finished = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
     const winnerTimeByRaceCat: Record<string, number> = {};
     const raceCatToFieldSize: Record<string, number> = {};
+    const raceCatToPlace: Record<string, Map<string, number>> = {};
     if (gradeLevelProgression) {
       const byRaceMs = _.groupBy(finished.filter((r) => getSchoolLevel(r) === "ms"), "race");
       const byRaceHsNonVarsity = _.groupBy(
         finished.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
         "race"
       );
-      Object.entries(byRaceMs).forEach(([raceId, riders]) => {
-        const min = _.min(riders.map((r) => r.totalTime!));
-        if (min != null) {
-          winnerTimeByRaceCat[`${raceId}|ms`] = min;
-          raceCatToFieldSize[`${raceId}|ms`] = riders.length;
-        }
-      });
-      Object.entries(byRaceHsNonVarsity).forEach(([raceId, riders]) => {
-        const min = _.min(riders.map((r) => r.totalTime!));
-        if (min != null) {
-          winnerTimeByRaceCat[`${raceId}|hs-nonvarsity`] = min;
-          raceCatToFieldSize[`${raceId}|hs-nonvarsity`] = riders.length;
-        }
+      [byRaceMs, byRaceHsNonVarsity].forEach((byRace, idx) => {
+        const suffix = idx === 0 ? "ms" : "hs-nonvarsity";
+        Object.entries(byRace).forEach(([raceId, riders]) => {
+          const sorted = _.sortBy(riders, (r) => r.totalTime!);
+          const min = _.min(riders.map((r) => r.totalTime!));
+          if (min != null) {
+            const catKey = `${raceId}|${suffix}`;
+            winnerTimeByRaceCat[catKey] = min;
+            raceCatToFieldSize[catKey] = riders.length;
+            const placeMap = new Map<string, number>();
+            sorted.forEach((r, i) => placeMap.set(riderKey(r), i + 1));
+            raceCatToPlace[catKey] = placeMap;
+          }
+        });
       });
     } else {
       const byRaceCat = _.groupBy(finished, (r) => baselineKey(r, combineRegions, false));
@@ -231,11 +233,18 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       const raceIndex = raceIdToIndex[r.race] ?? -1;
       if (raceIndex < 0) return;
       const gapToWinner = r.totalTime! - winnerTime;
-      const gapPct = winnerTime > 0 ? (gapToWinner / winnerTime) * 100 : 0;
+      const gapPctRaw = winnerTime > 0 ? (gapToWinner / winnerTime) * 100 : 0;
+      if (gapPctRaw > 100) return;
+      const gapPct = Math.min(gapPctRaw, 100);
       const fieldSize = raceCatToFieldSize[catKey] ?? 1;
-      const place = r.place >= 1 && r.place <= fieldSize ? r.place : fieldSize;
+      let place: number;
+      if (gradeLevelProgression && raceCatToPlace[catKey]) {
+        place = raceCatToPlace[catKey].get(riderKey(r)) ?? fieldSize;
+      } else {
+        place = r.place >= 1 && r.place <= fieldSize ? r.place : fieldSize;
+      }
       const placePct = fieldSize > 0 ? ((fieldSize - place + 1) / fieldSize) * 100 : 0;
-      const gapScore = Math.max(0, 100 - Math.min(gapPct, 100));
+      const gapScore = Math.max(0, 100 - gapPct);
       const performanceIndex = (gapScore + placePct) / 2;
       const opt = optionsByYear.find((o) => o.id === r.race);
       const key = riderKey(r);
@@ -446,6 +455,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       <div className="mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600">
         <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">{cfg.label}: {cfg.yLabel}</p>
         <p className="text-xs text-slate-500 dark:text-slate-400">{cfg.explanation}</p>
+        {gradeLevelProgression && (metric === "place-pct" || metric === "composite") && (
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
+            With Grade Level Progression on, placement is among <strong>all middle school</strong> or <strong>all high school (excluding varsity)</strong> in that race.
+          </p>
+        )}
       </div>
 
       <div className="w-full">

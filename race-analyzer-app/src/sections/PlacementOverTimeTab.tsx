@@ -1,5 +1,5 @@
 import _ from "lodash";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Rider } from "../types";
 import type { RaceOption } from "../utils/races";
 import { Filters } from "../components/Filters";
@@ -116,14 +116,25 @@ export function PlacementOverTimeTab({
 
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(800);
 
-  const chartWidth = Math.max(400, raceOrder.length * 80);
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const update = () => setChartWidth(el.clientWidth || 800);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    update();
+    return () => ro.disconnect();
+  }, []);
+
   const chartHeight = Math.max(
     MIN_CHART_HEIGHT,
     Math.min(maxPlace * HEIGHT_PER_PLACE, MAX_CHART_HEIGHT)
   );
   const padding = { top: 20, right: 20, bottom: 40, left: 44 };
-  const innerW = chartWidth - padding.left - padding.right;
+  const innerW = Math.max(0, chartWidth - padding.left - padding.right);
   const innerH = chartHeight - padding.top - padding.bottom;
 
   const xScale = (raceIndex: number) => padding.left + (raceIndex / Math.max(1, raceOrder.length - 1)) * innerW;
@@ -178,9 +189,9 @@ export function PlacementOverTimeTab({
           Select a single category (e.g. JV Boys) in the filters above to see placement over time.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="w-full" ref={chartContainerRef}>
           <div
-            className="min-w-[500px] bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-600 p-4 relative"
+            className="w-full bg-white dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-600 p-4 relative"
             onMouseMove={(e) => setTooltipPos({ x: e.clientX, y: e.clientY })}
           >
             {hoveredKey && (() => {
@@ -199,7 +210,12 @@ export function PlacementOverTimeTab({
                 </div>
               );
             })()}
-            <svg width={chartWidth} height={chartHeight} className="overflow-visible">
+            <svg
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+              preserveAspectRatio="none"
+              className="w-full overflow-visible"
+              style={{ minHeight: chartHeight, maxHeight: chartHeight }}
+            >
               {/* Y grid & labels */}
               {maxPlace > 0 && (
                 <>
