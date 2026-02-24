@@ -16,17 +16,18 @@ function categoryBaselineRegion(cat: string, combineRegions: boolean): string {
   return cat.replace(/\s+(North|South|Central|Other)\s*$/i, "").trim() || cat;
 }
 
-/** For MS + combineGrades: baseline by grade band only (e.g. "Girls Level 3 Grades 7/8" → "Girls Grades 7/8"). HS unchanged. */
-function categoryBaseline(
+/** Baseline key for gap-to-winner: by category (with optional region strip), or by school level for Grade Level Progression. */
+function baselineKey(
   r: Rider,
   combineRegions: boolean,
-  combineGrades: boolean
+  gradeLevelProgression: boolean
 ): string {
-  let cat = r.categoryRaw ?? "";
-  if (getSchoolLevel(r) === "ms" && combineGrades) {
-    cat = cat.replace(/\s*Level\s*[123]\s*/gi, " ").replace(/\s+/g, " ").trim();
+  if (gradeLevelProgression) {
+    const level = getSchoolLevel(r);
+    if (level === "ms") return `${r.race}|ms`;
+    return `${r.race}|hs-nonvarsity`;
   }
-  return categoryBaselineRegion(cat, combineRegions);
+  return `${r.race}|${categoryBaselineRegion(r.categoryRaw ?? "", combineRegions)}`;
 }
 
 /** Cubic Bezier path with flat tangents */
@@ -69,7 +70,7 @@ export interface RiderProgressionSeries {
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [teamFilter, setTeamFilter] = useState<string>("All");
   const [combineRegions, setCombineRegions] = useState(true);
-  const [combineGrades, setCombineGrades] = useState(false); // MS only: baseline by grade band (Level 1/2/3 → one)
+  const [gradeLevelProgression, setGradeLevelProgression] = useState(false); // Compare vs All MS or All HS (excl. varsity)
   const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set()); // empty = all years
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(800);
@@ -141,19 +142,32 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     });
 
     const finished = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
-    const byRaceCat = _.groupBy(
-      finished,
-      (r) => `${r.race}|${categoryBaseline(r, combineRegions, combineGrades)}`
-    );
     const winnerTimeByRaceCat: Record<string, number> = {};
-    Object.entries(byRaceCat).forEach(([k, riders]) => {
-      const min = _.min(riders.map((r) => r.totalTime!))!;
-      winnerTimeByRaceCat[k] = min;
-    });
+    if (gradeLevelProgression) {
+      const byRaceMs = _.groupBy(finished.filter((r) => getSchoolLevel(r) === "ms"), "race");
+      const byRaceHsNonVarsity = _.groupBy(
+        finished.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
+        "race"
+      );
+      Object.entries(byRaceMs).forEach(([raceId, riders]) => {
+        const min = _.min(riders.map((r) => r.totalTime!));
+        if (min != null) winnerTimeByRaceCat[`${raceId}|ms`] = min;
+      });
+      Object.entries(byRaceHsNonVarsity).forEach(([raceId, riders]) => {
+        const min = _.min(riders.map((r) => r.totalTime!));
+        if (min != null) winnerTimeByRaceCat[`${raceId}|hs-nonvarsity`] = min;
+      });
+    } else {
+      const byRaceCat = _.groupBy(finished, (r) => baselineKey(r, combineRegions, false));
+      Object.entries(byRaceCat).forEach(([k, riders]) => {
+        const min = _.min(riders.map((r) => r.totalTime!))!;
+        winnerTimeByRaceCat[k] = min;
+      });
+    }
 
     const keyToPoints = new Map<string, RiderProgressionPoint[]>();
     finished.forEach((r) => {
-      const catKey = `${r.race}|${categoryBaseline(r, combineRegions, combineGrades)}`;
+      const catKey = baselineKey(r, combineRegions, gradeLevelProgression);
       const winnerTime = winnerTimeByRaceCat[catKey];
       if (winnerTime == null) return;
       const raceIndex = raceIdToIndex[r.race] ?? -1;
@@ -189,7 +203,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     const teams = _.sortBy(_.uniq(series.map((s) => s.team)).filter(Boolean));
 
     return { series, raceOrder, shortLabels, teams };
-  }, [rawData, raceOptions, combineRegions, combineGrades, effectiveYears]);
+  }, [rawData, raceOptions, combineRegions, gradeLevelProgression, effectiveYears]);
 
   const filteredSeries = useMemo(() => {
     if (teamFilter === "All") return series;
@@ -281,11 +295,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         <label className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={combineGrades}
-            onChange={(e) => setCombineGrades(e.target.checked)}
+            checked={gradeLevelProgression}
+            onChange={(e) => setGradeLevelProgression(e.target.checked)}
             className="rounded border-slate-300 dark:border-slate-600"
           />
-          Combine like grade (MS): Level 1/2/3 → one baseline
+          Grade Level Progression (compare vs All MS or All HS, exclude varsity)
         </label>
         <span className="text-xs text-slate-400 dark:text-slate-500">
           Riders matched by name only. Gap to category winner (seconds). Only finished results; DNF/missing = no point. {filteredSeries.length} riders with 2+ races.
