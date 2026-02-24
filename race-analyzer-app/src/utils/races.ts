@@ -63,7 +63,7 @@ function csvRowsToRiders(rows: CsvRow[], raceId: number): Rider[] {
     const categoryVal = (row.CATEGORY ?? "").trim();
     const statusGroup = (row.STATUS_GROUP ?? "").trim();
     const catRaw = categoryVal === "All" && statusGroup ? statusGroup : categoryVal || statusGroup;
-    const team = (row.TEAM ?? "").trim();
+    const team = (row.TEAM ?? "").trim().toUpperCase();
     const grade = catRaw.match(/\bGrade\s*[678]\b/i) ? "ms" : "hs";
     const placeStr = (row.PLC ?? "").trim();
     const place = placeStr === "*" || placeStr === "" ? 999 : parseInt(placeStr, 10) || 999;

@@ -1,7 +1,8 @@
 import _ from "lodash";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Rider } from "../types";
 import type { RaceOption } from "../utils/races";
+import { getSchoolLevel } from "../constants/schoolLevel";
 import { regionTextClass } from "../utils/regionStyles";
 
 /** Match riders across years by name only (category/team change over time). */
@@ -10,9 +11,22 @@ function riderKey(r: Rider) {
 }
 
 /** Optionally strip region from category for baselining (e.g. "JV2 Boys North" → "JV2 Boys"). */
-function categoryBaseline(cat: string, combineRegions: boolean): string {
+function categoryBaselineRegion(cat: string, combineRegions: boolean): string {
   if (!combineRegions) return cat;
   return cat.replace(/\s+(North|South|Central|Other)\s*$/i, "").trim() || cat;
+}
+
+/** For MS + combineGrades: baseline by grade band only (e.g. "Girls Level 3 Grades 7/8" → "Girls Grades 7/8"). HS unchanged. */
+function categoryBaseline(
+  r: Rider,
+  combineRegions: boolean,
+  combineGrades: boolean
+): string {
+  let cat = r.categoryRaw ?? "";
+  if (getSchoolLevel(r) === "ms" && combineGrades) {
+    cat = cat.replace(/\s*Level\s*[123]\s*/gi, " ").replace(/\s+/g, " ").trim();
+  }
+  return categoryBaselineRegion(cat, combineRegions);
 }
 
 /** Cubic Bezier path with flat tangents */
@@ -55,10 +69,45 @@ export interface RiderProgressionSeries {
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [teamFilter, setTeamFilter] = useState<string>("All");
   const [combineRegions, setCombineRegions] = useState(true);
+  const [combineGrades, setCombineGrades] = useState(false); // MS only: baseline by grade band (Level 1/2/3 → one)
+  const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set()); // empty = all years
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(800);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+
+  const availableYears = useMemo(
+    () => _.sortBy(_.uniq(raceOptions.map((r) => r.year).filter((y): y is number => y != null))),
+    [raceOptions]
+  );
+  const effectiveYears = useMemo(
+    () => (selectedYears.size === 0 ? availableYears : _.sortBy([...selectedYears])),
+    [selectedYears, availableYears]
+  );
+
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const update = () => setChartWidth(el.clientWidth || 800);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    update();
+    return () => ro.disconnect();
+  }, []);
+
+  const toggleYear = (year: number) => {
+    setSelectedYears((prev) => {
+      const base = prev.size === 0 ? new Set(availableYears) : new Set(prev);
+      if (base.has(year)) {
+        base.delete(year);
+        return base.size === 0 ? new Set() : base;
+      }
+      base.add(year);
+      return base;
+    });
+  };
 
   const toggleSelected = (key: string) => {
     setSelectedKeys((prev) => {
@@ -79,7 +128,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
   const { series, raceOrder, shortLabels, teams } = useMemo(() => {
     const optionsByYear = _.sortBy(
-      raceOptions.filter((r) => r.year != null),
+      raceOptions.filter((r) => r.year != null && effectiveYears.includes(r.year)),
       [(r) => r.year, (r) => r.id]
     );
     const raceOrder = optionsByYear.map((r) => r.id);
@@ -94,7 +143,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     const finished = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
     const byRaceCat = _.groupBy(
       finished,
-      (r) => `${r.race}|${categoryBaseline(r.categoryRaw, combineRegions)}`
+      (r) => `${r.race}|${categoryBaseline(r, combineRegions, combineGrades)}`
     );
     const winnerTimeByRaceCat: Record<string, number> = {};
     Object.entries(byRaceCat).forEach(([k, riders]) => {
@@ -104,7 +153,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
     const keyToPoints = new Map<string, RiderProgressionPoint[]>();
     finished.forEach((r) => {
-      const catKey = `${r.race}|${categoryBaseline(r.categoryRaw, combineRegions)}`;
+      const catKey = `${r.race}|${categoryBaseline(r, combineRegions, combineGrades)}`;
       const winnerTime = winnerTimeByRaceCat[catKey];
       if (winnerTime == null) return;
       const raceIndex = raceIdToIndex[r.race] ?? -1;
@@ -140,7 +189,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     const teams = _.sortBy(_.uniq(series.map((s) => s.team)).filter(Boolean));
 
     return { series, raceOrder, shortLabels, teams };
-  }, [rawData, raceOptions, combineRegions]);
+  }, [rawData, raceOptions, combineRegions, combineGrades, effectiveYears]);
 
   const filteredSeries = useMemo(() => {
     if (teamFilter === "All") return series;
@@ -162,10 +211,9 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     return filteredSeries.filter((s) => selectedKeys.has(s.key));
   }, [filteredSeries, selectedKeys]);
 
-  const chartWidth = Math.max(600, raceOrder.length * 56);
   const chartHeight = 380;
   const padding = { top: 24, right: 24, bottom: 48, left: 52 };
-  const innerW = chartWidth - padding.left - padding.right;
+  const innerW = Math.max(0, chartWidth - padding.left - padding.right);
   const innerH = chartHeight - padding.top - padding.bottom;
 
   const maxGap = useMemo(() => {
@@ -192,6 +240,22 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   return (
     <div>
       <div className="flex items-center gap-4 mb-4 flex-wrap">
+        {availableYears.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Years</span>
+            {availableYears.map((y) => (
+              <label key={y} className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedYears.size === 0 || selectedYears.has(y)}
+                  onChange={() => toggleYear(y)}
+                  className="rounded border-slate-300 dark:border-slate-600"
+                />
+                {y}
+              </label>
+            ))}
+          </div>
+        )}
         <label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
           Team
           <select
@@ -213,6 +277,15 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             className="rounded border-slate-300 dark:border-slate-600"
           />
           Combine regions (baseline by category only, e.g. JV Boys)
+        </label>
+        <label className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={combineGrades}
+            onChange={(e) => setCombineGrades(e.target.checked)}
+            className="rounded border-slate-300 dark:border-slate-600"
+          />
+          Combine like grade (MS): Level 1/2/3 → one baseline
         </label>
         <span className="text-xs text-slate-400 dark:text-slate-500">
           Riders matched by name only. Gap to category winner (seconds). Only finished results; DNF/missing = no point. {filteredSeries.length} riders with 2+ races.
@@ -244,9 +317,10 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             );
           })()}
 
+          <div ref={chartContainerRef} className="w-full">
           <svg
             viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-            preserveAspectRatio="xMidYMid meet"
+            preserveAspectRatio="none"
             className="w-full overflow-visible"
             style={{ minHeight: chartHeight, maxHeight: chartHeight }}
           >
@@ -341,6 +415,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               );
             })}
           </svg>
+          </div>
 
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 mb-3">
             Click riders below to show only them in the graph. Hover a line to see rider.

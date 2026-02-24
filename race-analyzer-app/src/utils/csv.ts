@@ -16,7 +16,7 @@ export function parseCSV(text: string): Rider[] {
     const grade = (c[1] ?? "").trim().toLowerCase();
     const catRaw = (c[2] ?? "").trim();
     const cat = grade === "ms" ? "ms" : detectCategory(catRaw);
-    const team = (c[6] ?? "").trim();
+    const team = (c[6] ?? "").trim().toUpperCase();
     rows.push({
       id: c[0] + "-" + c[3] + "-" + c[4] + "-" + i,
       race: parseInt(c[0], 10) || 1,
