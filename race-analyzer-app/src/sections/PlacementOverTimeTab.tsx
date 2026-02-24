@@ -1,9 +1,14 @@
 import _ from "lodash";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Rider } from "../types";
 import type { RaceOption } from "../utils/races";
 import { Filters } from "../components/Filters";
 import { regionTextClass } from "../utils/regionStyles";
+
+const MIN_CHART_HEIGHT = 320;
+const HEIGHT_PER_PLACE = 14;
+const MAX_CHART_HEIGHT = 720;
+const HIT_STROKE_WIDTH = 24;
 
 const REGIONS = ["North", "Central", "South", "Other"];
 
@@ -103,8 +108,13 @@ export function PlacementOverTimeTab({
     return { series, maxPlace, raceNames };
   }, [filtered, fC, raceOrder, raceIdToIndex, raceOptions]);
 
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+
   const chartWidth = Math.max(400, raceOrder.length * 80);
-  const chartHeight = 320;
+  const chartHeight = Math.max(
+    MIN_CHART_HEIGHT,
+    Math.min(maxPlace * HEIGHT_PER_PLACE, MAX_CHART_HEIGHT)
+  );
   const padding = { top: 20, right: 20, bottom: 40, left: 44 };
   const innerW = chartWidth - padding.left - padding.right;
   const innerH = chartHeight - padding.top - padding.bottom;
@@ -204,63 +214,93 @@ export function PlacementOverTimeTab({
                   {(raceNames[i] ?? "").slice(0, 15)}
                 </text>
               ))}
-              {/* Lines */}
+              {/* Lines: hit area first (invisible), then visible path and dots */}
               {series.map((s, i) => {
                 const pts = pathPoints(s.points.map((p) => ({ x: raceIdToIndex[p.raceId] ?? 0, y: p.y })));
                 const pathD = smoothPath(pts);
                 const isHl = hl != null && s.team === hl;
+                const isHovered = hoveredKey === s.key;
                 const color = isHl ? "rgb(14, 165, 233)" : colors[i % colors.length];
-                const strokeW = isHl ? 2.5 : 1.5;
+                const strokeW = isHl ? 2.5 : isHovered ? 2 : 1.5;
                 return (
-                  <g key={s.key}>
+                  <g
+                    key={s.key}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => onHl(isHl ? null : s.team)}
+                    onMouseEnter={() => setHoveredKey(s.key)}
+                    onMouseLeave={() => setHoveredKey(null)}
+                  >
+                    <path
+                      d={pathD}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={HIT_STROKE_WIDTH}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      pointerEvents="stroke"
+                    />
                     <path
                       d={pathD}
                       fill="none"
                       stroke={color}
                       strokeWidth={strokeW}
-                      strokeOpacity={isHl ? 1 : 0.85}
+                      strokeOpacity={isHl ? 1 : isHovered ? 0.95 : 0.85}
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      pointerEvents="none"
                     />
                     {pts.map((p, j) => (
                       <circle
                         key={j}
                         cx={p.x}
                         cy={p.y}
-                        r={isHl ? 4 : 3}
+                        r={isHl ? 5 : isHovered ? 4.5 : 3.5}
                         fill={color}
                         stroke={isHl ? "white" : "transparent"}
                         strokeWidth={1}
+                        pointerEvents="none"
                       />
                     ))}
                   </g>
                 );
               })}
             </svg>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10px] max-h-32 overflow-y-auto">
-              {series.slice(0, 40).map((s, i) => {
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 mb-1">
+              Click a line in the graph or a rider below to highlight. {series.length} rider{series.length !== 1 ? "s" : ""}.
+            </p>
+            <div className="max-h-52 overflow-y-auto overflow-x-hidden border border-slate-200 dark:border-slate-600 rounded p-2 space-y-0.5">
+              {series.map((s, i) => {
                 const isHl = hl != null && s.team === hl;
+                const isHovered = hoveredKey === s.key;
                 return (
                   <button
                     key={s.key}
                     type="button"
                     onClick={() => onHl(isHl ? null : s.team)}
-                    className={"flex items-center gap-1.5 truncate " + (isHl ? "ring-1 ring-sky-400 rounded px-1" : "")}
+                    onMouseEnter={() => setHoveredKey(s.key)}
+                    onMouseLeave={() => setHoveredKey(null)}
+                    className={
+                      "w-full flex items-center gap-2 text-left py-2 px-2 rounded text-xs transition " +
+                      (isHl
+                        ? "bg-sky-100 dark:bg-sky-900/50 ring-1 ring-sky-400 dark:ring-sky-500"
+                        : isHovered
+                          ? "bg-slate-100 dark:bg-slate-700/80"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-700/50")
+                    }
                   >
                     <span
-                      className="shrink-0 w-2 h-2 rounded-full"
+                      className="shrink-0 w-3 h-3 rounded-full"
                       style={{ backgroundColor: isHl ? "rgb(14, 165, 233)" : colors[i % colors.length] }}
                     />
-                    <span className={"truncate " + (isHl ? "font-bold text-sky-600 dark:text-sky-400" : "")}>
+                    <span className={"min-w-0 truncate flex-1 " + (isHl ? "font-bold text-sky-600 dark:text-sky-400" : "text-slate-700 dark:text-slate-200")}>
                       {s.name}
                     </span>
-                    <span className={"truncate max-w-20 " + regionTextClass(s.region)}>{s.team}</span>
+                    <span className={"shrink-0 truncate max-w-28 " + regionTextClass(s.region)}>
+                      {s.team}
+                    </span>
                   </button>
                 );
               })}
-              {series.length > 40 && (
-                <span className="text-slate-400 dark:text-slate-500">+{series.length - 40} more</span>
-              )}
             </div>
           </div>
         </div>
