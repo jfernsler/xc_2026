@@ -98,7 +98,13 @@ export function PlacementOverTimeTab({
       });
     });
     const series = Array.from(keyToPoints.entries())
-      .map(([key, v]) => ({ key, ...v }))
+      .map(([key, v]) => {
+        const pointsByRace = [...v.points].sort(
+          (a, b) => (raceIdToIndex[a.raceId] ?? 0) - (raceIdToIndex[b.raceId] ?? 0)
+        );
+        const placesStr = pointsByRace.map((p) => p.y).join(" → ");
+        return { key, ...v, placesStr };
+      })
       .filter((s) => s.points.length >= 2)
       .sort((a, b) => {
         const aAvg = _.meanBy(a.points, "y");
@@ -188,7 +194,7 @@ export function PlacementOverTimeTab({
                     top: tooltipPos.y + 12,
                   }}
                 >
-                  <div className="font-medium">{s.name}</div>
+                  <div className="font-medium">{s.name}: {s.placesStr}</div>
                   <div className="text-slate-300 dark:text-slate-400">{s.team}</div>
                 </div>
               );
@@ -312,8 +318,8 @@ export function PlacementOverTimeTab({
                       className="shrink-0 w-3 h-3 rounded-full"
                       style={{ backgroundColor: isHl ? "rgb(14, 165, 233)" : colors[i % colors.length] }}
                     />
-                    <span className={"min-w-0 truncate flex-1 " + (isHl ? "font-bold text-sky-600 dark:text-sky-400" : "text-slate-700 dark:text-slate-200")}>
-                      {s.name}
+                    <span className={"min-w-0 flex-1 " + (isHl ? "font-bold text-sky-600 dark:text-sky-400" : "text-slate-700 dark:text-slate-200")}>
+                      {s.name}: <span className="text-slate-500 dark:text-slate-400 font-mono">{s.placesStr}</span>
                     </span>
                     <span className={"shrink-0 truncate max-w-28 " + regionTextClass(s.region)}>
                       {s.team}
