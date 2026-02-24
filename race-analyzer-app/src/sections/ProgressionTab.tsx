@@ -45,7 +45,7 @@ interface ProgressionTabProps {
   raceOptions: RaceOption[];
 }
 
-export type SchoolLevelFilter = "all" | "ms" | "hs";
+export type SchoolLevelFilter = "all" | "ms" | "hs" | "varsity";
 
 export interface RiderProgressionPoint {
   raceIndex: number;
@@ -54,7 +54,7 @@ export interface RiderProgressionPoint {
   raceName: string;
   categoryRaw: string;
   totalPlace: number;
-  /** Riders in same pool (all MS or all HS) in this race. */
+  /** Riders in same pool (MS, HS non-varsity, or varsity) in this race. */
   fieldSize: number;
 }
 
@@ -150,9 +150,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
     const finishedAll = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
     const finished =
-      schoolLevelFilter === "all"
-        ? finishedAll
-        : finishedAll.filter((r) => getSchoolLevel(r) === schoolLevelFilter);
+      schoolLevelFilter === "varsity"
+        ? finishedAll.filter((r) => r.category === "varsity")
+        : schoolLevelFilter === "all"
+          ? finishedAll
+          : finishedAll.filter((r) => getSchoolLevel(r) === schoolLevelFilter);
 
     const raceCatToPlace: Record<string, Map<string, number>> = {};
     const byRaceMs = _.groupBy(finishedAll.filter((r) => getSchoolLevel(r) === "ms"), "race");
@@ -160,6 +162,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       finishedAll.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
       "race"
     );
+    const byRaceVarsity = _.groupBy(finishedAll.filter((r) => r.category === "varsity"), "race");
     Object.entries(byRaceMs).forEach(([raceId, riders]) => {
       const catKey = `${raceId}|ms`;
       const placeMap = new Map<string, number>();
@@ -179,12 +182,24 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       _.sortBy(riders, (r) => r.totalTime!).forEach((r, i) => placeMap.set(riderKey(r), i + 1));
       raceCatToPlace[catKey] = placeMap;
     });
+    Object.entries(byRaceVarsity).forEach(([raceId, riders]) => {
+      const catKey = `${raceId}|varsity`;
+      const placeMap = new Map<string, number>();
+      _.sortBy(riders, (r) => r.totalTime!).forEach((r, i) => placeMap.set(riderKey(r), i + 1));
+      raceCatToPlace[catKey] = placeMap;
+    });
+
+    const levelKeyFor = (r: Rider) => {
+      if (r.category === "varsity") return `${r.race}|varsity`;
+      if (getSchoolLevel(r) === "ms") return `${r.race}|ms`;
+      return `${r.race}|hs-nonvarsity`;
+    };
 
     const keyToPoints = new Map<string, RiderProgressionPoint[]>();
     finished.forEach((r) => {
       const raceIndex = raceIdToIndex[r.race] ?? -1;
       if (raceIndex < 0) return;
-      const levelKey = getSchoolLevel(r) === "ms" ? `${r.race}|ms` : `${r.race}|hs-nonvarsity`;
+      const levelKey = levelKeyFor(r);
       const placeMap = raceCatToPlace[levelKey];
       const totalPlace = placeMap?.get(riderKey(r));
       if (totalPlace == null) return;
@@ -330,7 +345,8 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
           >
             <option value="all">All</option>
             <option value="ms">Middle School</option>
-            <option value="hs">High School</option>
+            <option value="hs">High School (non-varsity)</option>
+            <option value="varsity">Varsity</option>
           </select>
         </label>
         {availableYears.length > 0 && (
@@ -384,7 +400,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       <div className="mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600">
         <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">Total Placement &amp; Cohort Progression</p>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).
+          Your place within your pool: <strong>MS</strong> = all middle school; <strong>HS (non-varsity)</strong> = JV/freshman; <strong>Varsity</strong> = varsity only (3 laps, highest team points). All = everyone in their own pool. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS. Improvement = first-race place minus last-race place (positive = moved up).
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
           <strong>Cohort</strong> = riders who raced at least N of the same races (use “Cohort: at least 1/2/3 same race(s)” to tighten or loosen). Select one or more riders to see cohort size and <strong>contribution</strong> vs cohort average (positive = contributing up). At each race the cohort average uses only riders who ran that race.
@@ -454,7 +470,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
               transform={`rotate(-90, ${padding.left - 8}, ${padding.top + innerH / 2})`}
               className="fill-slate-500 dark:fill-slate-400 text-[10px]"
             >
-              Place (all MS or all HS)
+              Place ({schoolLevelFilter === "varsity" ? "varsity" : schoolLevelFilter === "ms" ? "all MS" : schoolLevelFilter === "hs" ? "all HS (non-varsity)" : "pool"})
             </text>
 
             {/* X labels */}
