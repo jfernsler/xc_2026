@@ -16,6 +16,22 @@ function categoryBaselineRegion(cat: string, combineRegions: boolean): string {
   return cat.replace(/\s+(North|South|Central|Other)\s*$/i, "").trim() || cat;
 }
 
+/** MS rider ran the longer HS course in this race (e.g. Grade 8 Level 3 at Finals). Detected by category. */
+function isMsRiderOnHSCourse(r: Rider): boolean {
+  const raw = (r.categoryRaw ?? "").toLowerCase();
+  return raw.includes("level 3") || raw.includes("level3");
+}
+
+/** When true, Level 3 MS riders in this race ran the HS course (longer times); rank them first, then other MS. */
+function msLevel3RanHSCourse(riders: Rider[]): boolean {
+  const level3 = riders.filter(isMsRiderOnHSCourse);
+  const other = riders.filter((r) => !isMsRiderOnHSCourse(r));
+  if (level3.length === 0 || other.length === 0) return false;
+  const mean3 = _.mean(level3.map((r) => r.totalTime!));
+  const meanOther = _.mean(other.map((r) => r.totalTime!));
+  return mean3 != null && meanOther != null && mean3 >= meanOther * 1.15;
+}
+
 /** Baseline key for gap-to-winner: by category (with optional region strip), or by school level for Grade Level Progression. */
 function baselineKey(
   r: Rider,
@@ -201,20 +217,32 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         finished.filter((r) => getSchoolLevel(r) === "hs" && r.category !== "varsity"),
         "race"
       );
-      [byRaceMs, byRaceHsNonVarsity].forEach((byRace, idx) => {
-        const suffix = idx === 0 ? "ms" : "hs-nonvarsity";
-        Object.entries(byRace).forEach(([raceId, riders]) => {
-          const sorted = _.sortBy(riders, (r) => r.totalTime!);
-          const min = _.min(riders.map((r) => r.totalTime!));
-          if (min != null) {
-            const catKey = `${raceId}|${suffix}`;
-            winnerTimeByRaceCat[catKey] = min;
-            raceCatToFieldSize[catKey] = riders.length;
-            const placeMap = new Map<string, number>();
-            sorted.forEach((r, i) => placeMap.set(riderKey(r), i + 1));
-            raceCatToPlace[catKey] = placeMap;
-          }
-        });
+      Object.entries(byRaceMs).forEach(([raceId, riders]) => {
+        const min = _.min(riders.map((r) => r.totalTime!));
+        if (min == null) return;
+        const catKey = `${raceId}|ms`;
+        winnerTimeByRaceCat[catKey] = min;
+        raceCatToFieldSize[catKey] = riders.length;
+        const placeMap = new Map<string, number>();
+        const orderForPlace =
+          msLevel3RanHSCourse(riders)
+            ? [
+                ..._.sortBy(riders.filter(isMsRiderOnHSCourse), (r) => r.totalTime!),
+                ..._.sortBy(riders.filter((r) => !isMsRiderOnHSCourse(r)), (r) => r.totalTime!),
+              ]
+            : _.sortBy(riders, (r) => r.totalTime!);
+        orderForPlace.forEach((r, i) => placeMap.set(riderKey(r), i + 1));
+        raceCatToPlace[catKey] = placeMap;
+      });
+      Object.entries(byRaceHsNonVarsity).forEach(([raceId, riders]) => {
+        const min = _.min(riders.map((r) => r.totalTime!));
+        if (min == null) return;
+        const catKey = `${raceId}|hs-nonvarsity`;
+        winnerTimeByRaceCat[catKey] = min;
+        raceCatToFieldSize[catKey] = riders.length;
+        const placeMap = new Map<string, number>();
+        _.sortBy(riders, (r) => r.totalTime!).forEach((r, i) => placeMap.set(riderKey(r), i + 1));
+        raceCatToPlace[catKey] = placeMap;
       });
     } else {
       const byRaceCat = _.groupBy(finished, (r) => baselineKey(r, combineRegions, false));
@@ -457,7 +485,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         <p className="text-xs text-slate-500 dark:text-slate-400">{cfg.explanation}</p>
         {gradeLevelProgression && (metric === "place-pct" || metric === "composite") && (
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-            With Grade Level Progression on, placement is among <strong>all middle school</strong> or <strong>all high school (excluding varsity)</strong> in that race.
+            With Grade Level Progression on, placement is among <strong>all middle school</strong> or <strong>all high school (excluding varsity)</strong> in that race. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked in their order by time but placed ahead of all other MS riders.
           </p>
         )}
       </div>
