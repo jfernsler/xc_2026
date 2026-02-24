@@ -16,6 +16,8 @@ interface PlacementOverTimeTabProps {
   filtered: Rider[];
   races: number[];
   raceOptions: RaceOption[];
+  /** Per-race set of rider ids who scored for their team (for highlight). */
+  contributedIdsByRace?: Record<number, Set<string>>;
   fR: string;
   fT: string;
   fC: string;
@@ -56,6 +58,7 @@ export function PlacementOverTimeTab({
   filtered,
   races,
   raceOptions,
+  contributedIdsByRace,
   fR,
   fT,
   fC,
@@ -291,24 +294,38 @@ export function PlacementOverTimeTab({
                       strokeLinejoin="round"
                       pointerEvents="none"
                     />
-                    {pts.map((p, j) => (
-                      <circle
-                        key={j}
-                        cx={p.x}
-                        cy={p.y}
-                        r={isHl ? 5 : isHovered ? 4.5 : 3.5}
-                        fill={color}
-                        stroke={isHl ? "white" : "transparent"}
-                        strokeWidth={1}
-                        pointerEvents="none"
-                      />
-                    ))}
+                    {pts.map((p, j) => {
+                      const contributed = s.points[j]?.contributed ?? false;
+                      const r = isHl ? 5 : isHovered ? 4.5 : 3.5;
+                      return (
+                        <g key={j} pointerEvents="none">
+                          <circle
+                            cx={p.x}
+                            cy={p.y}
+                            r={r}
+                            fill={color}
+                            stroke={isHl ? "white" : "transparent"}
+                            strokeWidth={1}
+                          />
+                          {contributed && (
+                            <path
+                              d={`M ${p.x} ${p.y - r} L ${p.x + r} ${p.y} L ${p.x} ${p.y + r} L ${p.x - r} ${p.y} Z`}
+                              fill="none"
+                              stroke="rgb(234, 179, 8)"
+                              strokeWidth={1.5}
+                              strokeOpacity={0.95}
+                            />
+                          )}
+                        </g>
+                      );
+                    })}
                   </g>
                 );
               })}
             </svg>
             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 mb-1">
               Click a line in the graph or a rider below to highlight. {series.length} rider{series.length !== 1 ? "s" : ""}.
+              Gold diamond = scored for team (in top 8 roster) that race.
             </p>
             <div className="max-h-52 overflow-y-auto overflow-x-hidden border border-slate-200 dark:border-slate-600 rounded p-2 space-y-0.5">
               {series.map((s, i) => {

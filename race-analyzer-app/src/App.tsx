@@ -150,6 +150,24 @@ export default function App() {
   }, [sData]);
 
   const scoringOpts = useMemo(() => ({ maxRiders, maxPerGender }), [maxRiders, maxPerGender]);
+  /** Per-race set of rider ids who were on their team's scoring roster (for points-contribution highlight). */
+  const contributedIdsByRace = useMemo(() => {
+    const out: Record<number, Set<string>> = {};
+    const raceIds = _.uniq(rawData.map((r) => r.race));
+    raceIds.forEach((raceId) => {
+      const riders = rawData.filter(
+        (r) => r.race === raceId && r.team && r.totalTime != null
+      ) as Rider[];
+      const ts = allTS(riders, undefined, scoringOpts);
+      ts.forEach((t) =>
+        t.rosterIds.forEach((id) => {
+          if (!out[raceId]) out[raceId] = new Set();
+          out[raceId].add(id);
+        })
+      );
+    });
+    return out;
+  }, [rawData, scoringOpts]);
   const tScores = useMemo(() => allTS(hsData, scenOv, scoringOpts), [hsData, scenOv, scoringOpts]);
   const scoringIds = useMemo(() => {
     const s = new Set<string>();
@@ -722,6 +740,7 @@ export default function App() {
               filtered={filtered}
               races={races}
               raceOptions={raceOptions}
+              contributedIdsByRace={contributedIdsByRace}
               fR={fR}
               fT={fT}
               fC={fC}

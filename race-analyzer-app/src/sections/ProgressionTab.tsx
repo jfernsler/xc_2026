@@ -4,6 +4,7 @@ import type { Rider } from "../types";
 import type { RaceOption } from "../utils/races";
 import { getSchoolLevel } from "../constants/schoolLevel";
 import { regionTextClass } from "../utils/regionStyles";
+import { allTS } from "../scoring/teamScore";
 
 /** Match riders across years by name only (category/team change over time). */
 function riderKey(r: Rider) {
@@ -56,6 +57,8 @@ export interface RiderProgressionPoint {
   totalPlace: number;
   /** Riders in same pool (MS, HS non-varsity, or varsity) in this race. */
   fieldSize: number;
+  /** True if this rider was on their team's scoring roster for this race (top 8, etc.). */
+  contributedPoints?: boolean;
 }
 
 export interface RiderProgressionSeries {
@@ -189,6 +192,18 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       raceCatToPlace[catKey] = placeMap;
     });
 
+    /** Rider ids who were on their team's scoring roster (top 8, etc.) per race. */
+    const contributedIdsByRace: Record<number, Set<string>> = {};
+    raceOrder.forEach((raceId) => {
+      const riders = rawData.filter(
+        (r) => r.race === raceId && r.team && r.totalTime != null
+      ) as Rider[];
+      const ts = allTS(riders);
+      const set = new Set<string>();
+      ts.forEach((t) => t.rosterIds.forEach((id) => set.add(id)));
+      contributedIdsByRace[raceId] = set;
+    });
+
     const levelKeyFor = (r: Rider) => {
       if (r.category === "varsity") return `${r.race}|varsity`;
       if (getSchoolLevel(r) === "ms") return `${r.race}|ms`;
@@ -214,6 +229,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         categoryRaw: r.categoryRaw,
         totalPlace,
         fieldSize: placeMap.size,
+        contributedPoints: contributedIdsByRace[r.race]?.has(r.id) ?? false,
       });
     });
 
@@ -540,17 +556,31 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
-                  {pts.map((p, j) => (
-                    <circle
-                      key={j}
-                      cx={p.x}
-                      cy={p.y}
-                      r={isHovered ? 4 : 3}
-                      fill={color}
-                      stroke={isHovered ? "white" : "transparent"}
-                      strokeWidth={1}
-                    />
-                  ))}
+                  {pts.map((p, j) => {
+                    const contributed = s.points[j]?.contributedPoints ?? false;
+                    const r = isHovered ? 4 : 3;
+                    return (
+                      <g key={j}>
+                        <circle
+                          cx={p.x}
+                          cy={p.y}
+                          r={r}
+                          fill={color}
+                          stroke={isHovered ? "white" : "transparent"}
+                          strokeWidth={1}
+                        />
+                        {contributed && (
+                          <path
+                            d={`M ${p.x} ${p.y - r} L ${p.x + r} ${p.y} L ${p.x} ${p.y + r} L ${p.x - r} ${p.y} Z`}
+                            fill="none"
+                            stroke="rgb(234, 179, 8)"
+                            strokeWidth={1.5}
+                            strokeOpacity={0.95}
+                          />
+                        )}
+                      </g>
+                    );
+                  })}
                 </g>
               );
             })}
@@ -713,6 +743,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 mb-3">
             Click riders below to show only them in the graph. Selected riders appear at the top of the list. Hover a line to see rider.
+            <span className="ml-1">Gold diamond = scored for team (in top 8 roster) that race.</span>
           </p>
 
           <div className="border border-slate-200 dark:border-slate-600 rounded-lg p-3 bg-slate-50/50 dark:bg-slate-900/30">
