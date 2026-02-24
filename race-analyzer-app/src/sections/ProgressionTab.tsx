@@ -73,9 +73,6 @@ function overlapCount(a: RiderProgressionSeries, b: RiderProgressionSeries): num
   return a.points.filter((p) => bIds.has(p.raceId)).length;
 }
 
-/** Min overlapping races to be in the selected rider's cohort. 1 = any overlap, 2 = at least 2 races together. */
-const COHORT_MIN_OVERLAP = 1;
-
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [schoolLevelFilter, setSchoolLevelFilter] = useState<SchoolLevelFilter>("all");
   const [teamFilter, setTeamFilter] = useState<string>("All");
@@ -86,6 +83,8 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  /** Min overlapping races to be in a rider's cohort (1 = any overlap, 2 = at least 2 races together). */
+  const [cohortMinOverlap, setCohortMinOverlap] = useState<1 | 2 | 3>(1);
 
   const availableYears = useMemo(
     () => _.sortBy(_.uniq(raceOptions.map((r) => r.year).filter((y): y is number => y != null))),
@@ -242,36 +241,34 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
     return filteredSeries.filter((s) => selectedKeys.has(s.key));
   }, [filteredSeries, selectedKeys]);
 
-  /** When exactly one rider is selected: cohort = riders who share at least COHORT_MIN_OVERLAP races; cohort avg per race (excluding rider); contribution vs cohort. */
-  const singleRiderCohort = useMemo(() => {
-    if (selectedKeys.size !== 1) return null;
-    const selected = filteredSeries.find((s) => selectedKeys.has(s.key));
-    if (!selected) return null;
-    const cohortRest = filteredSeries.filter(
-      (s) => s.key !== selected.key && overlapCount(selected, s) >= COHORT_MIN_OVERLAP
-    );
-    if (cohortRest.length === 0) return { selected, cohortRest, cohortAvgByRaceId: null, cohortImprovement: 0, contribution: 0 };
-    const cohortAvgByRaceId = new Map<number, number>();
-    selected.points.forEach((p) => {
-      const places = cohortRest
-        .map((s) => s.points.find((pt) => pt.raceId === p.raceId)?.totalPlace)
-        .filter((n): n is number => n != null);
-      if (places.length > 0) cohortAvgByRaceId.set(p.raceId, _.mean(places));
+  /** For each selected rider: cohort (riders with >= cohortMinOverlap same races), cohort avg per race, contribution. */
+  const selectedRiderCohorts = useMemo(() => {
+    if (selectedKeys.size === 0) return [];
+    const selectedList = filteredSeries.filter((s) => selectedKeys.has(s.key));
+    return selectedList.map((selected) => {
+      const cohortRest = filteredSeries.filter(
+        (s) => s.key !== selected.key && overlapCount(selected, s) >= cohortMinOverlap
+      );
+      if (cohortRest.length === 0) return { selected, cohortRest, cohortAvgByRaceId: null as Map<number, number> | null, cohortImprovement: 0, contribution: 0 };
+      const cohortAvgByRaceId = new Map<number, number>();
+      selected.points.forEach((p) => {
+        const places = cohortRest
+          .map((s) => s.points.find((pt) => pt.raceId === p.raceId)?.totalPlace)
+          .filter((n): n is number => n != null);
+        if (places.length > 0) cohortAvgByRaceId.set(p.raceId, _.mean(places));
+      });
+      const firstRaceId = selected.points[0]!.raceId;
+      const lastRaceId = selected.points[selected.points.length - 1]!.raceId;
+      const firstAvg = cohortAvgByRaceId.get(firstRaceId) ?? 0;
+      const lastAvg = cohortAvgByRaceId.get(lastRaceId) ?? 0;
+      const cohortImprovement = firstAvg - lastAvg;
+      const contribution = selected.improvement - cohortImprovement;
+      return { selected, cohortRest, cohortAvgByRaceId, cohortImprovement, contribution };
     });
-    const firstRaceId = selected.points[0]!.raceId;
-    const lastRaceId = selected.points[selected.points.length - 1]!.raceId;
-    const firstAvg = cohortAvgByRaceId.get(firstRaceId) ?? 0;
-    const lastAvg = cohortAvgByRaceId.get(lastRaceId) ?? 0;
-    const cohortImprovement = firstAvg - lastAvg;
-    const contribution = selected.improvement - cohortImprovement;
-    return {
-      selected,
-      cohortRest,
-      cohortAvgByRaceId,
-      cohortImprovement,
-      contribution,
-    };
-  }, [filteredSeries, selectedKeys]);
+  }, [filteredSeries, selectedKeys, cohortMinOverlap]);
+
+  /** Single selected rider (for chart cohort line and detailed panel). */
+  const singleRiderCohort = selectedRiderCohorts.length === 1 ? selectedRiderCohorts[0]! : null;
 
   const chartHeight = 380;
   const padding = { top: 24, right: 24, bottom: 48, left: 52 };
@@ -365,6 +362,19 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             ))}
           </select>
         </label>
+        <label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
+          Cohort: at least
+          <select
+            value={cohortMinOverlap}
+            onChange={(e) => setCohortMinOverlap(Number(e.target.value) as 1 | 2 | 3)}
+            className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 dark:text-slate-100 rounded px-2 py-1.5 text-xs text-slate-900 min-w-[52px]"
+          >
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+          </select>
+          same race{cohortMinOverlap !== 1 ? "s" : ""}
+        </label>
         <span className="text-xs text-slate-400 dark:text-slate-500">
           Riders matched by name only. {filteredSeries.length} riders with 2+ races.
           {selectedKeys.size > 0 && ` Showing ${selectedKeys.size} selected in graph.`}
@@ -377,7 +387,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
           Your place when all middle school riders (or all high school, excluding varsity) are sorted by total time in that race. One list per race; lower = better. When Grade 8 Level 3 runs the HS course (e.g. Finals), they are ranked by time but placed ahead of all other MS riders. Improvement = first-race place minus last-race place (positive = you moved up).
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          <strong>Cohort</strong> = riders who raced at least one of the same races (tracked by name across years). Select one rider to see their cohort size and <strong>contribution</strong>: how much they improved vs the cohort average (positive = contributing up, negative = contributing down). At each race the cohort average uses only riders who ran that race.
+          <strong>Cohort</strong> = riders who raced at least N of the same races (use “Cohort: at least 1/2/3 same race(s)” to tighten or loosen). Select one or more riders to see cohort size and <strong>contribution</strong> vs cohort average (positive = contributing up). At each race the cohort average uses only riders who ran that race.
         </p>
       </div>
 
@@ -462,8 +472,9 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
             {/* Cohort average line (when one rider selected and cohort has others) */}
             {singleRiderCohort?.cohortAvgByRaceId && singleRiderCohort.cohortRest.length > 0 && (() => {
+              const cohortAvgByRaceId = singleRiderCohort.cohortAvgByRaceId;
               const pts = singleRiderCohort.selected.points.map((p) => {
-                const avg = singleRiderCohort.cohortAvgByRaceId.get(p.raceId);
+                const avg = cohortAvgByRaceId.get(p.raceId);
                 return avg != null ? { x: xScale(p.raceIndex), y: yScalePlace(avg) } : null;
               }).filter((p): p is { x: number; y: number } => p != null);
               if (pts.length < 2) return null;
@@ -544,98 +555,128 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             </div>
           )}
 
-          {singleRiderCohort && (() => {
-            const { selected, cohortRest, cohortAvgByRaceId, cohortImprovement, contribution } = singleRiderCohort;
-            const hasCohort = cohortRest.length > 0 && cohortAvgByRaceId != null;
-            const contributingUp = contribution > 0;
-            const contributingDown = contribution < 0;
-            const w = Math.max(200, Math.min(400, innerW));
-            const h = 72;
-            const pad = { t: 6, r: 8, b: 18, l: 32 };
-            const iw = w - pad.l - pad.r;
-            const ih = h - pad.t - pad.b;
-            const perRace = selected.points.map((p) => {
-              const avg = cohortAvgByRaceId?.get(p.raceId);
-              const ahead = avg != null ? avg - p.totalPlace : null;
-              return { raceIndex: p.raceIndex, place: p.totalPlace, avg: avg ?? 0, ahead };
-            });
-            const maxPlace = Math.max(maxY, ...perRace.map((r) => r.avg));
-            const yPlace = (pl: number) => pad.t + (pl - 1) / Math.max(1, maxPlace - 1) * ih;
-            const xRace = (i: number) => pad.l + (i / Math.max(1, perRace.length - 1)) * iw;
-            const riderPath = perRace.length ? "M " + perRace.map((r, i) => `${xRace(i)} ${yPlace(r.place)}`).join(" L ") : "";
-            const avgPath = cohortAvgByRaceId && perRace.length ? "M " + perRace.map((r, i) => `${xRace(i)} ${yPlace(r.avg)}`).join(" L ") : "";
-            return (
-              <div className="mt-3 mb-3 p-3 rounded-lg border border-sky-200 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/20">
-                <div className="text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
-                  Cohort: {selected.name}
-                  {hasCohort ? ` vs ${cohortRest.length} rider${cohortRest.length !== 1 ? "s" : ""} who raced at least one of the same races` : " — no other riders who raced any of the same races"}
-                </div>
-                {!hasCohort && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400">Contribution is shown when at least one other rider raced any of the same races as this rider.</p>
-                )}
-                {hasCohort && (
-                <>
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={
-                        "text-sm font-medium " +
-                        (contributingUp
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : contributingDown
-                            ? "text-amber-600 dark:text-amber-400"
-                            : "text-slate-600 dark:text-slate-400")
-                      }
-                    >
-                      {contributingUp
-                        ? "Contributing up"
-                        : contributingDown
-                          ? "Contributing down"
-                          : "In line with cohort"}
-                    </span>
-                    <span className="text-slate-500 dark:text-slate-400 text-xs">
-                      {contribution > 0 ? "+" : ""}{contribution.toFixed(1)} vs cohort avg
-                      (rider improved {selected.improvement > 0 ? "−" : "+"}{Math.abs(selected.improvement)} places; cohort avg improved {cohortImprovement > 0 ? "−" : "+"}{Math.abs(cohortImprovement).toFixed(1)} places)
-                    </span>
-                  </div>
-                  {cohortAvgByRaceId && (
-                    <div className="flex items-baseline gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
-                      {selected.points.map((p, i) => {
-                        const avg = cohortAvgByRaceId.get(p.raceId);
-                        const ahead = avg != null ? avg - p.totalPlace : null;
-                        return (
-                          <span key={i} title={`${p.raceName}: you ${p.totalPlace}, cohort avg ${avg?.toFixed(1) ?? "—"}`}>
-                            {shortLabels[p.raceIndex]}: {p.totalPlace} vs {avg != null ? avg.toFixed(1) : "—"}
-                            {ahead != null && ahead !== 0 && (
-                              <span className={ahead > 0 ? "text-emerald-600" : "text-amber-600"}>
-                                {" "}({ahead > 0 ? "ahead" : "behind"} {Math.abs(ahead).toFixed(1)})
-                              </span>
-                            )}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-                {perRace.length > 0 && cohortAvgByRaceId && (
-                  <div className="mt-2">
-                    <svg width={w} height={h} className="overflow-visible">
-                      <path d={avgPath} fill="none" stroke="var(--tw-slate-400)" strokeWidth={1} strokeOpacity={0.7} strokeDasharray="4 3" strokeLinecap="round" strokeLinejoin="round" />
-                      <path d={riderPath} fill="none" stroke="rgb(14, 165, 233)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                      {perRace.map((r, i) => (
-                        <circle key={i} cx={xRace(i)} cy={yPlace(r.place)} r={2.5} fill="rgb(14, 165, 233)" />
-                      ))}
-                    </svg>
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                      Solid = your place; dashed = cohort average place (lower = better).
-                    </p>
-                  </div>
-                )}
-                </>
-                )}
+          {selectedRiderCohorts.length > 0 && (
+            <div className="mt-3 mb-3 p-3 rounded-lg border border-sky-200 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/20">
+              <div className="text-xs font-medium text-slate-700 dark:text-slate-200 mb-2">
+                Cohort view (at least {cohortMinOverlap} same race{cohortMinOverlap !== 1 ? "s" : ""})
               </div>
-            );
-          })()}
+              {selectedRiderCohorts.length === 1 ? (
+                (() => {
+                  const { selected, cohortRest, cohortAvgByRaceId, cohortImprovement, contribution } = selectedRiderCohorts[0]!;
+                  const hasCohort = cohortRest.length > 0 && cohortAvgByRaceId != null;
+                  const contributingUp = contribution > 0;
+                  const contributingDown = contribution < 0;
+                  const w = Math.max(200, Math.min(400, innerW));
+                  const h = 72;
+                  const pad = { t: 6, r: 8, b: 18, l: 32 };
+                  const iw = w - pad.l - pad.r;
+                  const ih = h - pad.t - pad.b;
+                  const perRace = selected.points.map((p) => {
+                    const avg = cohortAvgByRaceId?.get(p.raceId);
+                    const ahead = avg != null ? avg - p.totalPlace : null;
+                    return { raceIndex: p.raceIndex, place: p.totalPlace, avg: avg ?? 0, ahead };
+                  });
+                  const maxPlace = Math.max(maxY, ...perRace.map((r) => r.avg));
+                  const yPlace = (pl: number) => pad.t + (pl - 1) / Math.max(1, maxPlace - 1) * ih;
+                  const xRace = (i: number) => pad.l + (i / Math.max(1, perRace.length - 1)) * iw;
+                  const riderPath = perRace.length ? "M " + perRace.map((r, i) => `${xRace(i)} ${yPlace(r.place)}`).join(" L ") : "";
+                  const avgPath = cohortAvgByRaceId && perRace.length ? "M " + perRace.map((r, i) => `${xRace(i)} ${yPlace(r.avg)}`).join(" L ") : "";
+                  return (
+                    <>
+                      <div className="text-xs text-slate-600 dark:text-slate-300 mb-1">
+                        {selected.name}
+                        {hasCohort ? ` — ${cohortRest.length} rider${cohortRest.length !== 1 ? "s" : ""} in cohort` : " — no cohort (no others with enough overlap)"}
+                      </div>
+                      {!hasCohort && (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Raise overlap to 1 or lower the filter so more riders share races.</p>
+                      )}
+                      {hasCohort && (
+                        <>
+                          <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={
+                                  "text-sm font-medium " +
+                                  (contributingUp ? "text-emerald-600 dark:text-emerald-400" : contributingDown ? "text-amber-600 dark:text-amber-400" : "text-slate-600 dark:text-slate-400")
+                                }
+                              >
+                                {contributingUp ? "Contributing up" : contributingDown ? "Contributing down" : "In line with cohort"}
+                              </span>
+                              <span className="text-slate-500 dark:text-slate-400 text-xs">
+                                {contribution > 0 ? "+" : ""}{contribution.toFixed(1)} vs cohort avg
+                                (rider improved {selected.improvement >= 0 ? "−" : "+"}{Math.abs(selected.improvement)} places; cohort avg {cohortImprovement >= 0 ? "−" : "+"}{Math.abs(cohortImprovement).toFixed(1)} places)
+                              </span>
+                            </div>
+                            {cohortAvgByRaceId && (
+                              <div className="flex items-baseline gap-2 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                                {selected.points.map((p, i) => {
+                                  const avg = cohortAvgByRaceId.get(p.raceId);
+                                  const ahead = avg != null ? avg - p.totalPlace : null;
+                                  return (
+                                    <span key={i} title={`${p.raceName}: ${p.totalPlace} vs cohort avg ${avg?.toFixed(1) ?? "—"}`}>
+                                      {shortLabels[p.raceIndex]}: {p.totalPlace} vs {avg != null ? avg.toFixed(1) : "—"}
+                                      {ahead != null && ahead !== 0 && (
+                                        <span className={ahead > 0 ? "text-emerald-600" : "text-amber-600"}> ({ahead > 0 ? "ahead" : "behind"} {Math.abs(ahead).toFixed(1)})</span>
+                                      )}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          {perRace.length > 0 && cohortAvgByRaceId && (
+                            <div className="mt-2">
+                              <svg width={w} height={h} className="overflow-visible">
+                                <path d={avgPath} fill="none" stroke="var(--tw-slate-400)" strokeWidth={1} strokeOpacity={0.7} strokeDasharray="4 3" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d={riderPath} fill="none" stroke="rgb(14, 165, 233)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                                {perRace.map((r, i) => (
+                                  <circle key={i} cx={xRace(i)} cy={yPlace(r.place)} r={2.5} fill="rgb(14, 165, 233)" />
+                                ))}
+                              </svg>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Solid = rider place; dashed = cohort average (lower = better).</p>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  );
+                })()
+              ) : (
+                <div className="space-y-2">
+                  {selectedRiderCohorts.map(({ selected, cohortRest, contribution }) => {
+                    const hasCohort = cohortRest.length > 0;
+                    const contributingUp = contribution > 0;
+                    const contributingDown = contribution < 0;
+                    const color = colorForKey(selected.key);
+                    return (
+                      <div
+                        key={selected.key}
+                        className="flex flex-wrap items-center gap-3 py-2 px-2 rounded-lg bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600"
+                        onMouseEnter={() => setHoveredKey(selected.key)}
+                        onMouseLeave={() => setHoveredKey(null)}
+                      >
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} aria-hidden />
+                        <span className="font-medium text-slate-800 dark:text-slate-200 min-w-0 truncate">{selected.name}</span>
+                        <span className="text-slate-500 dark:text-slate-400 text-xs shrink-0">
+                          {hasCohort ? `${cohortRest.length} in cohort` : "No cohort"}
+                        </span>
+                        {hasCohort && (
+                          <span
+                            className={
+                              "text-xs font-medium shrink-0 " +
+                              (contributingUp ? "text-emerald-600 dark:text-emerald-400" : contributingDown ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400")
+                            }
+                          >
+                            {contributingUp ? "Contributing up" : contributingDown ? "Contributing down" : "In line"} {contribution !== 0 && `(${contribution > 0 ? "+" : ""}${contribution.toFixed(1)})`}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 mb-3">
             Click riders below to show only them in the graph. Selected riders appear at the top of the list. Hover a line to see rider.
