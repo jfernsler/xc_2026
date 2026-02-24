@@ -10,7 +10,7 @@ export interface RaceOption {
   year?: number;
 }
 
-/** Row shape from scraper CSV (STATUS_GROUP, CATEGORY, BIB, PLC, NAME, TEAM, LAPS, LAP1..LAP4, PEN, TIME) */
+/** Row shape from scraper CSV (STATUS_GROUP, CATEGORY, BIB, PLC, NAME, TEAM, LAPS, LAP1..LAP4, PEN, TIME). Some years use CATEGORY=All and put group in STATUS_GROUP. */
 interface CsvRow {
   STATUS_GROUP?: string;
   CATEGORY?: string;
@@ -46,12 +46,27 @@ function parseSocalCsv(text: string): CsvRow[] {
   return rows;
 }
 
+/** Derive total time from TIME column or sum of lap times (handles 2024-style CSVs where TIME is empty). */
+function deriveTotalTime(row: CsvRow): number | null {
+  const fromTime = parseTime(row.TIME);
+  if (fromTime != null) return fromTime;
+  const lapTimes = [row.LAP1, row.LAP2, row.LAP3, row.LAP4]
+    .map(parseTime)
+    .filter((t): t is number => t != null && t >= 60);
+  if (lapTimes.length === 0) return null;
+  return lapTimes.reduce((a, b) => a + b, 0);
+}
+
 /** Map CSV rows to Rider[] for a given race id. */
 function csvRowsToRiders(rows: CsvRow[], raceId: number): Rider[] {
   return rows.map((row, i) => {
-    const catRaw = (row.CATEGORY ?? "").trim();
+    const categoryVal = (row.CATEGORY ?? "").trim();
+    const statusGroup = (row.STATUS_GROUP ?? "").trim();
+    const catRaw = categoryVal === "All" && statusGroup ? statusGroup : categoryVal || statusGroup;
     const team = (row.TEAM ?? "").trim();
     const grade = catRaw.match(/\bGrade\s*[678]\b/i) ? "ms" : "hs";
+    const placeStr = (row.PLC ?? "").trim();
+    const place = placeStr === "*" || placeStr === "" ? 999 : parseInt(placeStr, 10) || 999;
     return {
       id: `${raceId}-${row.BIB ?? ""}-${row.ID ?? ""}-${i}`,
       race: raceId,
@@ -59,7 +74,7 @@ function csvRowsToRiders(rows: CsvRow[], raceId: number): Rider[] {
       category: detectCategory(catRaw),
       categoryRaw: catRaw,
       gender: catRaw.toLowerCase().includes("girl") ? "girls" : "boys",
-      place: parseInt(row.PLC ?? "", 10) || 999,
+      place,
       number: (row.BIB ?? "").trim(),
       name: (row.NAME ?? "").trim(),
       team,
@@ -69,7 +84,7 @@ function csvRowsToRiders(rows: CsvRow[], raceId: number): Rider[] {
       lap1: parseTime(row.LAP1),
       lap2: parseTime(row.LAP2),
       lap3: parseTime(row.LAP3),
-      totalTime: parseTime(row.TIME),
+      totalTime: deriveTotalTime(row),
       penalty: (row.PEN ?? "").trim(),
     };
   });

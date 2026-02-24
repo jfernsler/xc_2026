@@ -4,8 +4,15 @@ import type { Rider } from "../types";
 import type { RaceOption } from "../utils/races";
 import { regionTextClass } from "../utils/regionStyles";
 
+/** Match riders across years by name only (category/team change over time). */
 function riderKey(r: Rider) {
-  return `${r.name}|${r.team}`;
+  return (r.name ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+/** Optionally strip region from category for baselining (e.g. "JV2 Boys North" → "JV2 Boys"). */
+function categoryBaseline(cat: string, combineRegions: boolean): string {
+  if (!combineRegions) return cat;
+  return cat.replace(/\s+(North|South|Central|Other)\s*$/i, "").trim() || cat;
 }
 
 /** Cubic Bezier path with flat tangents */
@@ -47,6 +54,7 @@ export interface RiderProgressionSeries {
 
 export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
   const [teamFilter, setTeamFilter] = useState<string>("All");
+  const [combineRegions, setCombineRegions] = useState(true);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
@@ -64,8 +72,11 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
       return `${y}-${idxInYear}`;
     });
 
-    const finished = rawData.filter((r) => r.totalTime != null && r.team);
-    const byRaceCat = _.groupBy(finished, (r) => `${r.race}|${r.categoryRaw}`);
+    const finished = rawData.filter((r) => r.totalTime != null && (r.name ?? "").trim());
+    const byRaceCat = _.groupBy(
+      finished,
+      (r) => `${r.race}|${categoryBaseline(r.categoryRaw, combineRegions)}`
+    );
     const winnerTimeByRaceCat: Record<string, number> = {};
     Object.entries(byRaceCat).forEach(([k, riders]) => {
       const min = _.min(riders.map((r) => r.totalTime!))!;
@@ -74,8 +85,8 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
     const keyToPoints = new Map<string, RiderProgressionPoint[]>();
     finished.forEach((r) => {
-      const k = `${r.race}|${r.categoryRaw}`;
-      const winnerTime = winnerTimeByRaceCat[k];
+      const catKey = `${r.race}|${categoryBaseline(r.categoryRaw, combineRegions)}`;
+      const winnerTime = winnerTimeByRaceCat[catKey];
       if (winnerTime == null) return;
       const raceIndex = raceIdToIndex[r.race] ?? -1;
       if (raceIndex < 0) return;
@@ -100,16 +111,17 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
         const first = sorted[0]!;
         const last = sorted[sorted.length - 1]!;
         const improvement = last.gapToWinner - first.gapToWinner;
-        const name = rawData.find((r) => riderKey(r) === key)?.name ?? "";
-        const team = rawData.find((r) => riderKey(r) === key)?.team ?? "";
-        const region = rawData.find((r) => riderKey(r) === key)?.region ?? "Other";
+        const nameRider = rawData.find((r) => riderKey(r) === key);
+        const name = nameRider?.name ?? "";
+        const team = last ? (rawData.find((r) => r.race === last.raceId && riderKey(r) === key)?.team ?? "") : (nameRider?.team ?? "");
+        const region = nameRider?.region ?? "Other";
         return { key, name, team, region, points: sorted, improvement };
       });
 
     const teams = _.sortBy(_.uniq(series.map((s) => s.team)).filter(Boolean));
 
     return { series, raceOrder, shortLabels, teams };
-  }, [rawData, raceOptions]);
+  }, [rawData, raceOptions, combineRegions]);
 
   const filteredSeries = useMemo(() => {
     if (teamFilter === "All") return series;
@@ -145,7 +157,7 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
+      <div className="flex items-center gap-4 mb-4 flex-wrap">
         <label className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2">
           Team
           <select
@@ -159,8 +171,17 @@ export function ProgressionTab({ rawData, raceOptions }: ProgressionTabProps) {
             ))}
           </select>
         </label>
+        <label className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={combineRegions}
+            onChange={(e) => setCombineRegions(e.target.checked)}
+            className="rounded border-slate-300 dark:border-slate-600"
+          />
+          Combine regions (baseline by category only, e.g. JV Boys)
+        </label>
         <span className="text-xs text-slate-400 dark:text-slate-500">
-          Gap to category winner (seconds). Only finished results; DNF/missing = no point. {filteredSeries.length} riders with 2+ races.
+          Riders matched by name only. Gap to category winner (seconds). Only finished results; DNF/missing = no point. {filteredSeries.length} riders with 2+ races.
         </span>
       </div>
 

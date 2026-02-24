@@ -219,30 +219,50 @@ def scrape_event(event_id: int, output_file: str = None) -> pd.DataFrame:
 def scrape_all_events(
     event_ids: list[int],
     output_dir: str,
+    skip_existing: bool = True,
 ) -> list[dict]:
     """
     Scrape each event, save CSVs into output_dir with event-based filenames,
-    and write manifest.json there. Returns manifest list (id, name, file).
+    and write manifest.json there. If skip_existing, events already in manifest
+    are skipped and new events are appended. Returns full manifest (id, name, year, file).
     """
     os.makedirs(output_dir, exist_ok=True)
-    manifest = []
-    for eid in event_ids:
+    manifest_path = os.path.join(output_dir, "manifest.json")
+    existing_by_id = {}
+    if skip_existing and os.path.isfile(manifest_path):
+        with open(manifest_path) as f:
+            for entry in json.load(f):
+                existing_by_id[entry["id"]] = entry
+        print(f"  Loaded manifest: {len(existing_by_id)} events already captured")
+    to_scrape = [eid for eid in event_ids if eid not in existing_by_id]
+    if to_scrape:
+        print(f"  Scraping {len(to_scrape)} new event(s): {to_scrape}")
+    else:
+        print("  No new events to scrape")
+    new_entries = []
+    for eid in to_scrape:
         scraper = RaceResultScraper(eid)
         csv_path = scraper.get_event_filename(extension=".csv", directory=output_dir)
         scraper.scrape(output_file=csv_path)
         name = scraper.get_event_name()
         year_match = re.search(r"\b(19|20)\d{2}\b", name)
         year = int(year_match.group(0)) if year_match else None
-        manifest.append({
+        new_entries.append({
             "id": eid,
             "name": name,
             "year": year,
             "file": os.path.basename(csv_path),
         })
-    manifest_path = os.path.join(output_dir, "manifest.json")
+    # Merge: order by event_ids; use existing entry or new entry
+    manifest = []
+    for eid in event_ids:
+        if eid in existing_by_id:
+            manifest.append(existing_by_id[eid])
+        else:
+            manifest.append(next(e for e in new_entries if e["id"] == eid))
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
-    print(f"  Wrote {manifest_path}")
+    print(f"  Wrote {manifest_path} ({len(manifest)} total)")
     return manifest
 
 
