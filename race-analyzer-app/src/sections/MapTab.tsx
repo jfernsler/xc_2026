@@ -157,6 +157,11 @@ function CourseAndElevation({
   }, [sectionMode, totalDist, course.timingPoints, distanceUnit]);
 
   useEffect(() => {
+    setSectionStartIdx(0);
+    setSectionFinishIdx(999);
+  }, [course.id]);
+
+  useEffect(() => {
     const n = sectionSegments.length;
     if (n === 0) return;
     setSectionStartIdx((i) => Math.min(i, n - 1));
@@ -591,7 +596,11 @@ function CourseAndElevation({
               type="radio"
               name="sectionMode"
               checked={sectionMode === "timing"}
-              onChange={() => setSectionMode("timing")}
+              onChange={() => {
+                setSectionMode("timing");
+                setSectionStartIdx(0);
+                setSectionFinishIdx(999);
+              }}
               className="border-slate-300 dark:border-slate-600"
             />
             Timing points
@@ -601,7 +610,11 @@ function CourseAndElevation({
               type="radio"
               name="sectionMode"
               checked={sectionMode === "miles"}
-              onChange={() => setSectionMode("miles")}
+              onChange={() => {
+                setSectionMode("miles");
+                setSectionStartIdx(0);
+                setSectionFinishIdx(999);
+              }}
               className="border-slate-300 dark:border-slate-600"
             />
             Miles
