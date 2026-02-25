@@ -403,6 +403,26 @@ function CourseAndElevation({
   }, [dragStart, dragCurrent]);
 
   const showRange = selectedRange ?? dragRange;
+
+  const selectionStats = useMemo(() => {
+    if (!selectedRange || !elevations.length) return null;
+    const dist = selectedRange.distMax - selectedRange.distMin;
+    const e0 = elevationAtDistance(elevations, selectedRange.distMin);
+    const e1 = elevationAtDistance(elevations, selectedRange.distMax);
+    if (e0 == null || e1 == null) return null;
+    const elevChange = e1 - e0;
+    const isMiles = distanceUnit === "mi";
+    const runSameUnit = isMiles ? dist * 5280 : dist;
+    const riseSameUnit = elevChange;
+    const avgGradePct = runSameUnit !== 0 ? (riseSameUnit / runSameUnit) * 100 : 0;
+    return {
+      distance: dist,
+      distanceUnit,
+      elevChange,
+      elevationUnit,
+      avgGradePct,
+    };
+  }, [selectedRange, elevations, distanceUnit, elevationUnit]);
   const startPoint = coords.length > 0 ? project(coords[0]![0], coords[0]![1]) : null;
 
   return (
@@ -572,6 +592,17 @@ function CourseAndElevation({
           ))}
           <span>{elevData.distMax.toFixed(2)} {distanceUnit}</span>
         </div>
+        {selectionStats && (
+          <div className="mt-2 px-2 py-1.5 rounded bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700 text-[11px] text-slate-700 dark:text-slate-200">
+            <span className="font-medium text-sky-700 dark:text-sky-300">Selection:</span>
+            {" "}
+            {selectionStats.distance.toFixed(3)} {selectionStats.distanceUnit}
+            {" · "}
+            {selectionStats.elevChange >= 0 ? "+" : ""}{selectionStats.elevChange.toFixed(0)} {selectionStats.elevationUnit}
+            {" · "}
+            avg grade {selectionStats.avgGradePct >= 0 ? "" : "−"}{Math.abs(selectionStats.avgGradePct).toFixed(1)}%
+          </div>
+        )}
       </div>
     </div>
   );
