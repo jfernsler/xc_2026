@@ -398,6 +398,19 @@ export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
     { id: "correlation", label: "Correlation" },
   ];
 
+  const timingExplanation =
+    timingMode === "sector"
+      ? "Sector = time in that segment only (e.g. L1-S2 is the interval from the previous mat to this mat). Good for “who was fast through this section?”"
+      : "Chip = cumulative time at that split (total elapsed to that mat). Early slow/fast segments carry through—so colors show who’s ahead/behind on total time at each point, not segment-by-segment.";
+
+  const viewExplanations: Record<ViewMode, string> = {
+    splits: "Raw split times per rider. Each column is a timing segment; L1/L2/L3 and Total are from results.",
+    "segment-stats": "Min, max, mean, median, and standard deviation for each segment across all filtered riders.",
+    distribution: "Histogram of times per segment: how many riders fall in each time bucket. Shows spread and pacing patterns.",
+    "vs-average": "Each cell = rider’s time minus their category average. Green = faster than category avg, red = slower. With Sector you see segment-by-segment; with Chip you see cumulative position at each mat.",
+    correlation: "Scatter plot: each point is a rider; X and Y are two splits (or total). Trend line and r show how related they are.",
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -431,6 +444,13 @@ export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 px-3 py-2 text-xs text-slate-600 dark:text-slate-300">
+        <p className="font-medium text-slate-700 dark:text-slate-200 mb-1">Using: {timingMode === "sector" ? "Sector" : "Chip"}</p>
+        <p className="mb-1">{timingExplanation}</p>
+        <p className="font-medium text-slate-700 dark:text-slate-200 mt-1.5 mb-0.5">View: {viewTabs.find((t) => t.id === viewMode)?.label}</p>
+        <p>{viewExplanations[viewMode]}</p>
       </div>
 
       {viewMode === "splits" && (
