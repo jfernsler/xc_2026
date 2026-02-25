@@ -104,3 +104,15 @@ export interface MapData {
   elevationUnit: string;
   courses: MapCourse[];
 }
+
+/** Per-rider split times: sector (segment time) or chip (cumulative at split). */
+export interface RiderSplits {
+  sector: (number | null)[];
+  chip: (number | null)[];
+}
+
+/** Parsed split timing for a race. segmentLabels e.g. ["L1-S1","L1-S2",...]; byRiderId key = Rider.id. */
+export interface SplitData {
+  segmentLabels: string[];
+  byRiderId: Record<string, RiderSplits>;
+}

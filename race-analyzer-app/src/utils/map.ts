@@ -145,6 +145,59 @@ export function elevationAtDistance(
   return null;
 }
 
+/** Slice course to a distance range [distMin, distMax]. Returns coords and cumulativeMiles (absolute course distances) for the segment. */
+export function sliceCourseToDistanceRange(
+  coords: [number, number][],
+  cumulativeMiles: number[],
+  distMin: number,
+  distMax: number
+): { coords: [number, number][]; cumulativeMiles: number[] } {
+  if (coords.length === 0 || cumulativeMiles.length === 0) return { coords: [], cumulativeMiles: [] };
+  const total = cumulativeMiles[cumulativeMiles.length - 1] ?? 0;
+  const dMin = Math.max(0, distMin);
+  const dMax = Math.min(total, distMax);
+  if (dMin >= dMax) return { coords: [], cumulativeMiles: [] };
+
+  const outCoords: [number, number][] = [];
+  const outMiles: number[] = [];
+
+  const addPoint = (d: number) => {
+    const pt = distanceToCoord(coords, d, cumulativeMiles);
+    if (pt) {
+      outCoords.push(pt);
+      outMiles.push(d);
+    }
+  };
+
+  addPoint(dMin);
+  for (let i = 0; i < coords.length; i++) {
+    const d = cumulativeMiles[i] ?? 0;
+    if (d > dMin && d < dMax) {
+      outCoords.push(coords[i]!);
+      outMiles.push(d);
+    }
+  }
+  if (dMax > dMin) addPoint(dMax);
+  return { coords: outCoords, cumulativeMiles: outMiles };
+}
+
+/** Filter elevation samples to [distMin, distMax] and add interpolated endpoints if needed. */
+export function sliceElevationsToRange(
+  elevations: [number, number][],
+  distMin: number,
+  distMax: number
+): [number, number][] {
+  if (!elevations.length) return [];
+  const pts = elevations.filter(([d]) => d >= distMin - 1e-6 && d <= distMax + 1e-6);
+  const out: [number, number][] = [];
+  const e0 = elevationAtDistance(elevations, distMin);
+  const e1 = elevationAtDistance(elevations, distMax);
+  if (e0 != null && (pts[0]?.[0] ?? distMin) > distMin) out.push([distMin, e0]);
+  pts.forEach(([d, e]) => out.push([d, e]));
+  if (e1 != null && (pts[pts.length - 1]?.[0] ?? distMax) < distMax) out.push([distMax, e1]);
+  return out.length ? out : [[distMin, e0 ?? 0], [distMax, e1 ?? 0]];
+}
+
 /** Per-segment slope (elev gain / distance) and elevation for coloring. Segment i = from coord i to i+1. */
 export function segmentSlopeAndElev(
   coords: [number, number][],

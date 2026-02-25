@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import _ from "lodash";
-import type { Rider, ScenarioRider, ScenarioChange } from "./types";
+import type { Rider, ScenarioRider, ScenarioChange, SplitData } from "./types";
 import { getSchoolLevel } from "./constants/schoolLevel";
 import { DEFAULT_MAX_PER_GENDER, DEFAULT_MAX_RIDERS } from "./constants/scoring";
 import { fetchRacesManifest, loadRaceCsv, loadRacesForYear, loadAllRaces, type RaceOption } from "./utils/races";
@@ -47,6 +47,7 @@ export default function App() {
   const [raceOptions, setRaceOptions] = useState<RaceOption[]>([]);
   const [eventIdsWithMaps, setEventIdsWithMaps] = useState<Set<number>>(new Set());
   const [selectedRaceId, setSelectedRaceId] = useState<string>("");
+  const [splitData, setSplitData] = useState<SplitData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [lastSentCategories, setLastSentCategories] = useState<string[]>([]);
@@ -82,8 +83,9 @@ export default function App() {
     setLoadError(null);
     setLoading(true);
     loadRaceCsv(race)
-      .then((riders) => {
+      .then(({ riders, splits }) => {
         setRawData(riders);
+        setSplitData(splits ?? null);
         setTab("results");
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load race"))
@@ -96,6 +98,7 @@ export default function App() {
     loadRacesForYear(raceOptions, year)
       .then((riders) => {
         setRawData(riders);
+        setSplitData(null);
         setTab("cumulative-teams");
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load races"))
@@ -108,6 +111,7 @@ export default function App() {
     loadAllRaces(raceOptions)
       .then((riders) => {
         setRawData(riders);
+        setSplitData(null);
         setTab("progression");
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load all years"))
@@ -782,10 +786,32 @@ export default function App() {
           )}
 
           {tab === "splits" && rawData.length > 0 && (
-            <SplitsTab
-              eventId={mapAndSplitsEventId}
-              raceName={raceOptions.find((r) => String(r.id) === selectedRaceId)?.name ?? ""}
-            />
+            <div>
+              <Filters
+                regions={REGIONS}
+                teams={teams}
+                cats={cats}
+                races={races}
+                fSchool={fSchool}
+                fR={fR}
+                fT={fT}
+                fC={fC}
+                fRace={fRace}
+                hl={hl}
+                onFSchool={setFSchool}
+                onFR={setFR}
+                onFT={setFT}
+                onFC={setFC}
+                onFRace={setFRace}
+                onHl={setHl}
+              />
+              <SplitsTab
+                raceName={raceOptions.find((r) => String(r.id) === selectedRaceId)?.name ?? ""}
+                filtered={filtered}
+                splits={splitData}
+                hl={hl}
+              />
+            </div>
           )}
 
           {tab === "map" && rawData.length > 0 && (

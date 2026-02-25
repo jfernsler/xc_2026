@@ -1,4 +1,4 @@
-import type { Rider } from "../types";
+import type { Rider, SplitData, RiderSplits } from "../types";
 import { REGION_MAP } from "../constants/regions";
 import { detectCategory } from "./category";
 import { parseTime } from "./time";
@@ -72,6 +72,45 @@ function deriveTotalTime(row: CsvRow): number | null {
   return lapTimes.reduce((a, b) => a + b, 0);
 }
 
+const SPLIT_SECTOR_RE = /^LAP(\d+)_SPLIT(\d+)_SECTOR$/;
+
+/** Build segment labels and keys in lap/split order from CSV headers. */
+function getSegmentKeys(rows: CsvRow[]): { labels: string[]; sectorKeys: string[]; chipKeys: string[] } {
+  const headers = Object.keys((rows[0] ?? {}) as Record<string, string>);
+  const sectorKeys = headers
+    .filter((h) => SPLIT_SECTOR_RE.test(h))
+    .sort((a, b) => {
+      const ma = a.match(SPLIT_SECTOR_RE)!;
+      const mb = b.match(SPLIT_SECTOR_RE)!;
+      const lapA = parseInt(ma[1], 10);
+      const lapB = parseInt(mb[1], 10);
+      if (lapA !== lapB) return lapA - lapB;
+      return parseInt(ma[2], 10) - parseInt(mb[2], 10);
+    });
+  if (sectorKeys.length === 0) return { labels: [], sectorKeys: [], chipKeys: [] };
+  const labels = sectorKeys.map((k) => {
+    const m = k.match(SPLIT_SECTOR_RE)!;
+    return `L${m[1]}-S${m[2]}`;
+  });
+  const chipKeys = sectorKeys.map((k) => k.replace(/_SECTOR$/, "_CHIP"));
+  return { labels, sectorKeys, chipKeys };
+}
+
+/** Build SplitData from CSV rows (same row order as csvRowsToRiders). */
+function buildSplitsFromRows(rows: CsvRow[], raceId: number): SplitData | null {
+  const { labels, sectorKeys, chipKeys } = getSegmentKeys(rows);
+  if (labels.length === 0) return null;
+  const byRiderId: Record<string, RiderSplits> = {};
+  const getRow = (row: CsvRow) => row as Record<string, string>;
+  rows.forEach((row, i) => {
+    const riderId = `${raceId}-${row.BIB ?? ""}-${row.ID ?? ""}-${i}`;
+    const sector = sectorKeys.map((k) => parseTime(getRow(row)[k]));
+    const chip = chipKeys.map((k) => parseTime(getRow(row)[k]));
+    byRiderId[riderId] = { sector, chip };
+  });
+  return { segmentLabels: labels, byRiderId };
+}
+
 /** Map CSV rows to Rider[] for a given race id. */
 function csvRowsToRiders(rows: CsvRow[], raceId: number): Rider[] {
   return rows.map((row, i) => {
@@ -117,21 +156,28 @@ export async function fetchRacesManifest(): Promise<RaceOption[]> {
   return Array.isArray(list) ? list : [];
 }
 
-export async function loadRaceCsv(race: RaceOption): Promise<Rider[]> {
+export interface LoadRaceResult {
+  riders: Rider[];
+  splits: SplitData | null;
+}
+
+export async function loadRaceCsv(race: RaceOption): Promise<LoadRaceResult> {
   const res = await fetch(`${base}races/${race.file}`);
   if (!res.ok) throw new Error(`Could not load ${race.file}`);
   const text = await res.text();
   if (text.trimStart().startsWith("<!"))
     throw new Error(`races/${race.file} not found. Add the CSV to public/races/`);
   const rows = parseSocalCsv(text);
-  return csvRowsToRiders(rows, race.id);
+  const riders = csvRowsToRiders(rows, race.id);
+  const splits = buildSplitsFromRows(rows, race.id);
+  return { riders, splits };
 }
 
-/** Load races from a list and return concatenated riders. */
+/** Load races from a list and return concatenated riders (splits not returned). */
 export async function loadRaces(races: RaceOption[]): Promise<Rider[]> {
   if (!races.length) return [];
   const results = await Promise.all(races.map((r) => loadRaceCsv(r)));
-  return results.flat();
+  return results.flatMap((r) => r.riders);
 }
 
 /** Load all races for a given year. */

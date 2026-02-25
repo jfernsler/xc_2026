@@ -8,6 +8,8 @@ import {
   svgPointToDistance,
   elevationAtDistance,
   segmentSlopeAndElev,
+  sliceCourseToDistanceRange,
+  sliceElevationsToRange,
 } from "../utils/map";
 
 interface MapTabProps {
@@ -54,6 +56,36 @@ function getMarkers(distMin: number, distMax: number, distanceUnit: string): num
     if (d >= distMin) markers.push(d);
   }
   return markers;
+}
+
+export type SectionMode = "timing" | "miles";
+
+export interface SectionSegment {
+  label: string;
+  dist: number;
+}
+
+/** Build section options: timing points (Start, Split 1.., Finish) or miles (Start, 1 mi, 2 mi.., Finish). */
+function buildSectionSegments(
+  mode: SectionMode,
+  totalDist: number,
+  timingPoints: { distance: number | null }[],
+  mileMarkers: number[],
+  distanceUnit: string
+): SectionSegment[] {
+  const segments: SectionSegment[] = [{ label: "Start", dist: 0 }];
+  if (mode === "timing") {
+    const sorted = timingPoints
+      .map((tp) => tp.distance)
+      .filter((d): d is number => d != null && d > 0 && d < totalDist)
+      .sort((a, b) => a - b);
+    sorted.forEach((d, i) => segments.push({ label: `Split ${i + 1}`, dist: d }));
+  } else {
+    const mid = mileMarkers.filter((m) => m > 0 && m < totalDist);
+    mid.forEach((m) => segments.push({ label: `${m} ${distanceUnit}`, dist: m }));
+  }
+  segments.push({ label: "Finish", dist: totalDist });
+  return segments;
 }
 
 const MAP_WIDTH = 600;
@@ -110,12 +142,55 @@ function CourseAndElevation({
   elevationUnit: string;
   vizOptions: MapVizOptions;
 }) {
-  const coords = course.coordinates ?? [];
-  const elevations = course.elevations ?? [];
+  const fullCoords = course.coordinates ?? [];
+  const fullElevations = course.elevations ?? [];
+  const fullCumulMiles = useMemo(() => cumulativeDistancesMiles(fullCoords), [fullCoords]);
+  const totalDist = fullCumulMiles.length > 0 ? fullCumulMiles[fullCumulMiles.length - 1]! : 0;
+
+  const [sectionMode, setSectionMode] = useState<SectionMode>("timing");
+  const [sectionStartIdx, setSectionStartIdx] = useState(0);
+  const [sectionFinishIdx, setSectionFinishIdx] = useState(999);
+
+  const sectionSegments = useMemo(() => {
+    const mileMarkers = getMarkers(0, totalDist, distanceUnit);
+    return buildSectionSegments(sectionMode, totalDist, course.timingPoints ?? [], mileMarkers, distanceUnit);
+  }, [sectionMode, totalDist, course.timingPoints, distanceUnit]);
+
+  useEffect(() => {
+    const n = sectionSegments.length;
+    if (n === 0) return;
+    setSectionStartIdx((i) => Math.min(i, n - 1));
+    setSectionFinishIdx((i) => {
+      const clamped = Math.min(Math.max(i, 0), n - 1);
+      return clamped;
+    });
+  }, [sectionSegments.length]);
+
+  useEffect(() => {
+    setSectionFinishIdx((i) => (i < sectionStartIdx ? sectionStartIdx : i));
+  }, [sectionStartIdx]);
+
+  const sectionDistMin = sectionSegments[sectionStartIdx]?.dist ?? 0;
+  const sectionDistMax = sectionSegments[sectionFinishIdx]?.dist ?? totalDist;
+  const isFullSection = sectionStartIdx === 0 && sectionFinishIdx === sectionSegments.length - 1;
+
+  useEffect(() => {
+    setElevViewRange(null);
+  }, [sectionDistMin, sectionDistMax]);
+
+  const { coords, cumulMiles } = useMemo(() => {
+    if (isFullSection || totalDist <= 0) return { coords: fullCoords, cumulMiles: fullCumulMiles };
+    const r = sliceCourseToDistanceRange(fullCoords, fullCumulMiles, sectionDistMin, sectionDistMax);
+    return { coords: r.coords, cumulMiles: r.cumulativeMiles };
+  }, [isFullSection, fullCoords, fullCumulMiles, sectionDistMin, sectionDistMax, totalDist]);
+
+  const elevations = useMemo(() => {
+    if (isFullSection || totalDist <= 0) return fullElevations;
+    return sliceElevationsToRange(fullElevations, sectionDistMin, sectionDistMax);
+  }, [isFullSection, fullElevations, sectionDistMin, sectionDistMax, totalDist]);
+
   const path = useMemo(() => courseToPath(coords, MAP_WIDTH, MAP_HEIGHT), [coords]);
   const sameBounds = useMemo(() => boundsAndScale(coords), [coords]);
-  const cumulMiles = useMemo(() => cumulativeDistancesMiles(coords), [coords]);
-  const totalDist = cumulMiles.length > 0 ? cumulMiles[cumulMiles.length - 1]! : 0;
   const segments = useMemo(
     () => segmentSlopeAndElev(coords, cumulMiles, elevations),
     [coords, cumulMiles, elevations]
@@ -236,7 +311,15 @@ function CourseAndElevation({
   const hoverElevY = hoverElev != null ? elevData.y(hoverElev) : null;
   const hoverElevX = hoverDistance != null ? elevData.x(hoverDistance) : null;
 
-  const timingPoints = course.timingPoints ?? [];
+  const allTimingPoints = course.timingPoints ?? [];
+  const timingPoints = useMemo(
+    () =>
+      allTimingPoints.filter((tp) => {
+        const d = tp.distance;
+        return d != null && d >= sectionDistMin - 1e-6 && d <= sectionDistMax + 1e-6;
+      }),
+    [allTimingPoints, sectionDistMin, sectionDistMax]
+  );
   const useViz = vizOptions.courseColorBy !== "none";
 
   const [selectedRange, setSelectedRange] = useState<{ distMin: number; distMax: number } | null>(null);
@@ -496,8 +579,72 @@ function CourseAndElevation({
   }, [selectedRange, elevations, distanceUnit, elevationUnit]);
   const startPoint = coords.length > 0 ? project(coords[0]![0], coords[0]![1]) : null;
 
+  const finishOptions = sectionSegments.slice(sectionStartIdx);
+
   return (
     <div className="w-full">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <span className="text-xs text-slate-500 dark:text-slate-400">Section:</span>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+            <input
+              type="radio"
+              name="sectionMode"
+              checked={sectionMode === "timing"}
+              onChange={() => setSectionMode("timing")}
+              className="border-slate-300 dark:border-slate-600"
+            />
+            Timing points
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer">
+            <input
+              type="radio"
+              name="sectionMode"
+              checked={sectionMode === "miles"}
+              onChange={() => setSectionMode("miles")}
+              className="border-slate-300 dark:border-slate-600"
+            />
+            Miles
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+            Start
+            <select
+              value={sectionStartIdx}
+              onChange={(e) => {
+                const i = Number(e.target.value);
+                setSectionStartIdx(i);
+                if (sectionFinishIdx < i) setSectionFinishIdx(i);
+              }}
+              className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs py-1 pr-6"
+            >
+              {sectionSegments.map((seg, i) => (
+                <option key={i} value={i}>
+                  {seg.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1 text-xs text-slate-600 dark:text-slate-300">
+            Finish
+            <select
+              value={sectionFinishIdx}
+              onChange={(e) => setSectionFinishIdx(Number(e.target.value))}
+              className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs py-1 pr-6"
+            >
+              {finishOptions.map((seg, j) => {
+                const idx = sectionStartIdx + j;
+                return (
+                  <option key={idx} value={idx}>
+                    {seg.label}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        </div>
+      </div>
       <div
         className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-800/50 relative"
         onMouseLeave={handleMapMouseLeave}
