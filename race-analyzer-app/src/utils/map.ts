@@ -2,11 +2,24 @@ import type { MapData } from "../types";
 
 const base = (import.meta.env.BASE_URL ?? "/").replace(/\/*$/, "") + "/";
 
+export interface MapsManifestEntry {
+  event_id: number;
+  map_id: number;
+  name: string;
+  file: string;
+}
+
+/** Fetch maps manifest: lists all races that have map data (event_id = race id in races manifest). */
+export async function fetchMapsManifest(): Promise<MapsManifestEntry[]> {
+  const res = await fetch(`${base}maps/manifest.json`);
+  if (!res.ok) return [];
+  const list = (await res.json()) as MapsManifestEntry[];
+  return Array.isArray(list) ? list : [];
+}
+
 /** Fetch map JSON by race event_id (matches event_id in maps manifest). */
 export async function fetchMapByEventId(eventId: number): Promise<MapData | null> {
-  const res = await fetch(`${base}maps/manifest.json`);
-  if (!res.ok) return null;
-  const manifest = (await res.json()) as Array<{ event_id: number; file: string }>;
+  const manifest = await fetchMapsManifest();
   const entry = manifest.find((m) => m.event_id === eventId);
   if (!entry) return null;
   const mapRes = await fetch(`${base}maps/${entry.file}`);
@@ -130,4 +143,66 @@ export function elevationAtDistance(
     }
   }
   return null;
+}
+
+/** Per-segment slope (elev gain / distance) and elevation for coloring. Segment i = from coord i to i+1. */
+export function segmentSlopeAndElev(
+  coords: [number, number][],
+  cumulativeMiles: number[],
+  elevations: [number, number][]
+): { slope: number; elev: number; distStart: number; distEnd: number }[] {
+  const out: { slope: number; elev: number; distStart: number; distEnd: number }[] = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const d0 = cumulativeMiles[i] ?? 0;
+    const d1 = cumulativeMiles[i + 1] ?? d0;
+    const run = (d1 - d0) * 5280 || 0.0001; // miles -> ft for slope as ft/ft
+    const e0 = elevationAtDistance(elevations, d0) ?? 0;
+    const e1 = elevationAtDistance(elevations, d1) ?? e0;
+    const rise = e1 - e0;
+    const slope = run !== 0 ? rise / run : 0;
+    out.push({ slope, elev: (e0 + e1) / 2, distStart: d0, distEnd: d1 });
+  }
+  return out;
+}
+
+/** Index of segment with max upward slope (most punchy). */
+export function punchySegmentIndex(segments: { slope: number }[]): number {
+  if (!segments.length) return -1;
+  let best = 0;
+  for (let i = 1; i < segments.length; i++) {
+    if (segments[i]!.slope > segments[best]!.slope) best = i;
+  }
+  return best;
+}
+
+/** Index of segment with largest elevation gain (most climbing). */
+export function mostClimbingSegmentIndex(segments: { slope: number; distStart: number; distEnd: number }[]): number {
+  if (!segments.length) return -1;
+  let best = 0;
+  let bestGain = -Infinity;
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i]!;
+    const gain = s.slope * ((s.distEnd - s.distStart) * 5280);
+    if (gain > bestGain) {
+      bestGain = gain;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** Index of segment with smallest elevation gain / most descent (least climbing). */
+export function leastClimbingSegmentIndex(segments: { slope: number; distStart: number; distEnd: number }[]): number {
+  if (!segments.length) return -1;
+  let best = 0;
+  let bestGain = Infinity;
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i]!;
+    const gain = s.slope * ((s.distEnd - s.distStart) * 5280);
+    if (gain < bestGain) {
+      bestGain = gain;
+      best = i;
+    }
+  }
+  return best;
 }

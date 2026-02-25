@@ -4,6 +4,7 @@ import type { Rider, ScenarioRider, ScenarioChange } from "./types";
 import { getSchoolLevel } from "./constants/schoolLevel";
 import { DEFAULT_MAX_PER_GENDER, DEFAULT_MAX_RIDERS } from "./constants/scoring";
 import { fetchRacesManifest, loadRaceCsv, loadRacesForYear, loadAllRaces, type RaceOption } from "./utils/races";
+import { fetchMapsManifest } from "./utils/map";
 import { allTS } from "./scoring/teamScore";
 import { racePoints } from "./scoring/points";
 import { findMoves } from "./moves/findMoves";
@@ -44,6 +45,7 @@ export default function App() {
   const [selectedMoves, setSelectedMoves] = useState<Set<number>>(new Set());
   const [reportText, setReportText] = useState("");
   const [raceOptions, setRaceOptions] = useState<RaceOption[]>([]);
+  const [eventIdsWithMaps, setEventIdsWithMaps] = useState<Set<number>>(new Set());
   const [selectedRaceId, setSelectedRaceId] = useState<string>("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,6 +70,12 @@ export default function App() {
     fetchRacesManifest()
       .then(setRaceOptions)
       .catch(() => setRaceOptions([]));
+  }, []);
+
+  useEffect(() => {
+    fetchMapsManifest()
+      .then((list) => setEventIdsWithMaps(new Set(list.map((m) => m.event_id))))
+      .catch(() => setEventIdsWithMaps(new Set()));
   }, []);
 
   const loadRace = (race: RaceOption) => {
@@ -523,6 +531,7 @@ export default function App() {
                 {raceOptions.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
+                    {eventIdsWithMaps.has(r.id) ? " 🗺️" : ""}
                   </option>
                 ))}
               </select>
@@ -549,6 +558,7 @@ export default function App() {
                 {raceOptions.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
+                    {eventIdsWithMaps.has(r.id) ? " 🗺️" : ""}
                   </option>
                 ))}
               </select>
@@ -568,6 +578,7 @@ export default function App() {
               {raceOptions.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
+                  {eventIdsWithMaps.has(r.id) ? " 🗺️" : ""}
                 </option>
               ))}
             </select>
