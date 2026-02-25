@@ -66,7 +66,33 @@ function correlation(x: number[], y: number[]): number | null {
   return den === 0 ? null : num / den;
 }
 
+/** Linear regression slope and intercept (y = a + b*x). */
+function linearRegression(x: number[], y: number[]): { a: number; b: number } | null {
+  if (x.length !== y.length || x.length < 2) return null;
+  const n = x.length;
+  const sumX = x.reduce((a, b) => a + b, 0);
+  const sumY = y.reduce((a, b) => a + b, 0);
+  const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i]!, 0);
+  const sumX2 = x.reduce((a, b) => a + b * b, 0);
+  const b = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const a = (sumY - b * sumX) / n;
+  return { a, b };
+}
+
+function correlationInterpretation(r: number): string {
+  const abs = Math.abs(r);
+  const dir = r > 0 ? "Positive: faster on one tends to mean faster on the other." : "Negative: faster on one tends to mean slower on the other.";
+  if (abs >= 0.7) return `Strong (r = ${r.toFixed(2)}). ${dir}`;
+  if (abs >= 0.4) return `Moderate (r = ${r.toFixed(2)}). ${dir}`;
+  if (abs >= 0.2) return `Weak (r = ${r.toFixed(2)}). Little linear relationship.`;
+  return `Very weak (r = ${r.toFixed(2)}). No clear relationship.`;
+}
+
 const TOTAL_LABEL = "Total time";
+const CATEGORY_COLORS = [
+  "#0ea5e9", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899",
+  "#06b6d4", "#eab308", "#84cc16", "#a855f7", "#f43f5e",
+];
 
 interface CorrelationScatterProps {
   splits: SplitData;
@@ -87,116 +113,221 @@ function CorrelationScatter({ splits, grouped, ridersWithSplits, timingMode, hl 
     const riders = catFilter === "All" ? ridersWithSplits : grouped[catFilter] ?? [];
     const xIdx = xAxis === TOTAL_LABEL ? -1 : splits.segmentLabels.indexOf(xAxis);
     const yIdx = yAxis === TOTAL_LABEL ? -1 : splits.segmentLabels.indexOf(yAxis);
-    const out: { x: number; y: number; rider: Rider }[] = [];
+    const out: { x: number; y: number; rider: Rider; category: string }[] = [];
     riders.forEach((r) => {
       const xVal = xIdx === -1 ? r.totalTime : getSegmentValues(splits, r.id, timingMode)[xIdx];
       const yVal = yIdx === -1 ? r.totalTime : getSegmentValues(splits, r.id, timingMode)[yIdx];
-      if (xVal != null && yVal != null) out.push({ x: xVal, y: yVal, rider: r });
+      if (xVal != null && yVal != null) out.push({ x: xVal, y: yVal, rider: r, category: r.categoryRaw });
     });
     return out;
   }, [splits, grouped, ridersWithSplits, catFilter, xAxis, yAxis, timingMode]);
 
-  const { xMin, xMax, yMin, yMax, r } = useMemo(() => {
-    if (points.length < 2) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1, r: null as number | null };
+  const { xMin, xMax, yMin, yMax, r, trendLine } = useMemo(() => {
+    if (points.length < 2) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1, r: null as number | null, trendLine: null as { x1: number; y1: number; x2: number; y2: number } | null };
     const xs = points.map((p) => p.x);
     const ys = points.map((p) => p.y);
     const xMin = Math.min(...xs);
     const xMax = Math.max(...xs);
     const yMin = Math.min(...ys);
     const yMax = Math.max(...ys);
+    const padding = 0.04;
+    const xRange = (xMax - xMin) || 1;
+    const yRange = (yMax - yMin) || 1;
     const rVal = correlation(xs, ys);
+    const lr = linearRegression(xs, ys);
+    let line: { x1: number; y1: number; x2: number; y2: number } | null = null;
+    if (lr) {
+      const x1 = xMin - xRange * padding;
+      const x2 = xMax + xRange * padding;
+      line = { x1, y1: lr.a + lr.b * x1, x2, y2: lr.a + lr.b * x2 };
+    }
     return {
-      xMin: xMin - (xMax - xMin) * 0.05,
-      xMax: xMax + (xMax - xMin) * 0.05,
-      yMin: yMin - (yMax - yMin) * 0.05,
-      yMax: yMax + (yMax - yMin) * 0.05,
+      xMin: xMin - xRange * padding,
+      xMax: xMax + xRange * padding,
+      yMin: yMin - yRange * padding,
+      yMax: yMax + yRange * padding,
       r: rVal,
+      trendLine: line,
     };
   }, [points]);
 
-  const width = 520;
-  const height = 400;
-  const pad = { left: 48, right: 16, top: 8, bottom: 40 };
+  const width = 640;
+  const height = 480;
+  const pad = { left: 56, right: 24, top: 32, bottom: 52 };
   const plotW = width - pad.left - pad.right;
   const plotH = height - pad.top - pad.bottom;
 
   const toX = (v: number) => pad.left + ((v - xMin) / (xMax - xMin || 1)) * plotW;
   const toY = (v: number) => pad.top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
 
-  const xLabel = xAxis === TOTAL_LABEL ? "Total time" : xAxis;
-  const yLabel = yAxis === TOTAL_LABEL ? "Total time" : yAxis;
-
+  const xLabel = xAxis === TOTAL_LABEL ? "Total time" : `Segment: ${xAxis}`;
+  const yLabel = yAxis === TOTAL_LABEL ? "Total time" : `Segment: ${yAxis}`;
   const axisOptions = [TOTAL_LABEL, ...splits.segmentLabels];
 
+  const categoryColorIndex = useMemo(() => {
+    const idx: Record<string, number> = {};
+    Object.keys(grouped).forEach((cat, i) => { idx[cat] = i % CATEGORY_COLORS.length; });
+    return idx;
+  }, [grouped]);
+
+  const numTicks = 5;
+  const xTicks = useMemo(() => {
+    const step = (xMax - xMin) / (numTicks - 1);
+    return Array.from({ length: numTicks }, (_, i) => xMin + i * step);
+  }, [xMin, xMax]);
+  const yTicks = useMemo(() => {
+    const step = (yMax - yMin) / (numTicks - 1);
+    return Array.from({ length: numTicks }, (_, i) => yMin + i * step);
+  }, [yMin, yMax]);
+
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="text-xs text-slate-500 dark:text-slate-400">
+    <div className="space-y-4">
+      <div className="rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600 p-3">
+        <p className="text-sm text-slate-700 dark:text-slate-200">
+          <strong>What this shows:</strong> Each point is one rider. The horizontal axis is their time for the chosen X split (or total time); the vertical axis is the Y split. If the cloud follows a line, that split pair is correlated—e.g. riders who are fast in L1-S1 tend to be fast in L2-S1 too. The trend line and <em>r</em> summarize strength and direction.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
           Category
           <select
             value={catFilter}
             onChange={(e) => setCatFilter(e.target.value)}
-            className="ml-1 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-1 text-slate-900 dark:text-slate-100 text-xs"
+            className="ml-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-slate-900 dark:text-slate-100 text-xs"
           >
             {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
         </label>
-        <label className="text-xs text-slate-500 dark:text-slate-400">
-          X axis
+        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+          X axis (horizontal)
           <select
             value={xAxis}
             onChange={(e) => setXAxis(e.target.value)}
-            className="ml-1 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-1 text-slate-900 dark:text-slate-100 text-xs"
+            className="ml-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-slate-900 dark:text-slate-100 text-xs"
           >
             {axisOptions.map((opt) => (
               <option key={opt} value={opt}>{opt}</option>
             ))}
           </select>
         </label>
-        <label className="text-xs text-slate-500 dark:text-slate-400">
-          Y axis
+        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+          Y axis (vertical)
           <select
             value={yAxis}
             onChange={(e) => setYAxis(e.target.value)}
-            className="ml-1 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-1 text-slate-900 dark:text-slate-100 text-xs"
+            className="ml-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-slate-900 dark:text-slate-100 text-xs"
           >
             {axisOptions.map((opt) => (
               <option key={opt} value={opt}>{opt}</option>
             ))}
           </select>
         </label>
-        {r != null && (
-          <span className="text-xs font-mono text-slate-600 dark:text-slate-300">
-            r = {r.toFixed(3)}
-          </span>
-        )}
       </div>
-      <div className="overflow-x-auto">
-        <svg width={width} height={height} className="border border-slate-200 dark:border-slate-600 rounded bg-white dark:bg-slate-900">
-          <text x={pad.left + plotW / 2} y={height - 4} textAnchor="middle" className="text-[10px] fill-slate-500 dark:fill-slate-400">{xLabel}</text>
-          <text x={12} y={pad.top + plotH / 2} textAnchor="middle" className="text-[10px] fill-slate-500 dark:fill-slate-400" transform={`rotate(-90, 12, ${pad.top + plotH / 2})`}>{yLabel}</text>
-          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + plotH} stroke="currentColor" className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
-          <line x1={pad.left} y1={pad.top + plotH} x2={pad.left + plotW} y2={pad.top + plotH} stroke="currentColor" className="stroke-slate-300 dark:stroke-slate-600" strokeWidth={1} />
+
+      {r != null && (
+        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${
+          Math.abs(r) >= 0.7 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700" :
+          Math.abs(r) >= 0.4 ? "bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 border border-sky-200 dark:border-sky-700" :
+          "bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600"
+        }`}>
+          {correlationInterpretation(r)}
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-lg border-2 border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-sm">
+        <svg width={width} height={height} className="min-w-0">
+          <defs>
+            <linearGradient id="corrPlotBg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f1f5f9" stopOpacity={0.7} />
+              <stop offset="100%" stopColor="#e2e8f0" stopOpacity={0.4} />
+            </linearGradient>
+          </defs>
+          <rect x={pad.left} y={pad.top} width={plotW} height={plotH} fill="url(#corrPlotBg)" />
+          {/* Grid */}
+          {xTicks.slice(1, -1).map((v, i) => (
+            <line key={`v${i}`} x1={toX(v)} y1={pad.top} x2={toX(v)} y2={pad.top + plotH} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="2,2" className="dark:stroke-slate-600" />
+          ))}
+          {yTicks.slice(1, -1).map((v, i) => (
+            <line key={`h${i}`} x1={pad.left} y1={toY(v)} x2={pad.left + plotW} y2={toY(v)} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="2,2" className="dark:stroke-slate-600" />
+          ))}
+          {/* Trend line */}
+          {trendLine && (
+            <line
+              x1={toX(trendLine.x1)}
+              y1={toY(trendLine.y1)}
+              x2={toX(trendLine.x2)}
+              y2={toY(trendLine.y2)}
+              stroke="#f59e0b"
+              strokeWidth={2.5}
+              strokeLinecap="round"
+              className="dark:stroke-amber-400"
+              opacity={0.9}
+            />
+          )}
+          {/* Axes */}
+          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + plotH} stroke="#64748b" strokeWidth={1.5} className="dark:stroke-slate-500" />
+          <line x1={pad.left} y1={pad.top + plotH} x2={pad.left + plotW} y2={pad.top + plotH} stroke="#64748b" strokeWidth={1.5} className="dark:stroke-slate-500" />
+          {/* Axis labels and ticks */}
+          {xTicks.map((v) => (
+            <g key={v}>
+              <line x1={toX(v)} y1={pad.top + plotH} x2={toX(v)} y2={pad.top + plotH + 6} stroke="#64748b" className="dark:stroke-slate-500" />
+              <text x={toX(v)} y={pad.top + plotH + 20} textAnchor="middle" className="text-[11px] fill-slate-600 dark:fill-slate-400 font-medium">{formatTime(v)}</text>
+            </g>
+          ))}
+          {yTicks.map((v) => (
+            <g key={v}>
+              <line x1={pad.left - 6} y1={toY(v)} x2={pad.left} y2={toY(v)} stroke="#64748b" className="dark:stroke-slate-500" />
+              <text x={pad.left - 8} y={toY(v) + 4} textAnchor="end" className="text-[11px] fill-slate-600 dark:fill-slate-400 font-medium">{formatTime(v)}</text>
+            </g>
+          ))}
+          <text x={pad.left + plotW / 2} y={height - 12} textAnchor="middle" className="text-xs font-semibold fill-slate-700 dark:fill-slate-300">{xLabel}</text>
+          <text x={14} y={pad.top + plotH / 2} textAnchor="middle" className="text-xs font-semibold fill-slate-700 dark:fill-slate-300" transform={`rotate(-90, 14, ${pad.top + plotH / 2})`}>{yLabel}</text>
+          {/* Points */}
           {points.map((p) => {
             const isHl = hl != null && p.rider.team === hl;
+            const color = catFilter === "All" ? CATEGORY_COLORS[categoryColorIndex[p.category] ?? 0] : (isHl ? "#0ea5e9" : "#64748b");
             return (
               <circle
                 key={p.rider.id}
                 cx={toX(p.x)}
                 cy={toY(p.y)}
-                r={isHl ? 5 : 3}
-                strokeWidth={isHl ? 2 : 0}
-                className={isHl ? "fill-sky-500 stroke-sky-700 dark:stroke-sky-300" : "fill-slate-500 dark:fill-slate-400"}
+                r={isHl ? 6 : 4}
+                fill={color}
+                stroke={isHl ? "#0369a1" : "rgba(255,255,255,0.8)"}
+                strokeWidth={isHl ? 2.5 : 1}
+                className="dark:stroke-slate-800"
               >
-                <title>{p.rider.name} ({p.rider.team}) — {xLabel}: {formatTime(p.x)}, {yLabel}: {formatTime(p.y)}</title>
+                <title>{p.rider.name} · {p.rider.team} · P{p.rider.place} · {xLabel}: {formatTime(p.x)} · {yLabel}: {formatTime(p.y)}</title>
               </circle>
             );
           })}
         </svg>
       </div>
-      <p className="text-xs text-slate-500 dark:text-slate-400">{points.length} riders with both values. Hover for rider details.</p>
+
+      <div className="flex flex-wrap items-center gap-4 text-xs">
+        {catFilter === "All" && (
+          <div className="flex flex-wrap gap-3">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">Categories:</span>
+            {Object.keys(grouped).map((cat, i) => (
+              <span key={cat} className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
+                <span className="text-slate-700 dark:text-slate-300">{cat}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        {hl && (
+          <span className="text-sky-600 dark:text-sky-400 font-medium">
+            Highlighted: {hl} (larger points)
+          </span>
+        )}
+        <span className="text-slate-500 dark:text-slate-400">
+          {points.length} riders · Hover a point for name, team, place, and times
+        </span>
+      </div>
     </div>
   );
 }
