@@ -18,6 +18,8 @@ import { ReportTab } from "./sections/ReportTab";
 import { CumulativeTeamsTab, type CumulativeTeamRow } from "./sections/CumulativeTeamsTab";
 import { PlacementOverTimeTab } from "./sections/PlacementOverTimeTab";
 import { ProgressionTab } from "./sections/ProgressionTab";
+import { MapTab } from "./sections/MapTab";
+import { SplitsTab } from "./sections/SplitsTab";
 
 const REGIONS = ["North", "Central", "South", "Other"];
 
@@ -117,6 +119,12 @@ export default function App() {
       if (race) loadRace(race);
     }
   };
+
+  const mapAndSplitsEventId = useMemo(() => {
+    if (!selectedRaceId || selectedRaceId.startsWith("all-")) return null;
+    const n = parseInt(selectedRaceId, 10);
+    return Number.isNaN(n) ? null : n;
+  }, [selectedRaceId]);
 
   const years = useMemo(
     () => _.sortBy(_.uniq(raceOptions.map((r) => r.year).filter((y): y is number => y != null))),
@@ -760,6 +768,20 @@ export default function App() {
 
           {tab === "progression" && selectedRaceId === "all-years" && (
             <ProgressionTab rawData={rawData} raceOptions={raceOptions} />
+          )}
+
+          {tab === "splits" && rawData.length > 0 && (
+            <SplitsTab
+              eventId={mapAndSplitsEventId}
+              raceName={raceOptions.find((r) => String(r.id) === selectedRaceId)?.name ?? ""}
+            />
+          )}
+
+          {tab === "map" && rawData.length > 0 && (
+            <MapTab
+              eventId={mapAndSplitsEventId}
+              raceName={raceOptions.find((r) => String(r.id) === selectedRaceId)?.name ?? ""}
+            />
           )}
         </div>
       </div>

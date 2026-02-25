@@ -76,3 +76,31 @@ export interface ScenarioChange {
   delta: number;
   makeup: number | null;
 }
+
+/** Map/course data from map scraper JSON */
+export interface MapTimingPoint {
+  type: string;
+  lat: number;
+  lng: number;
+  distance: number | null;
+}
+
+export interface MapCourse {
+  id: number;
+  courseID: number;
+  eventID: number;
+  name: string;
+  coordinates: [number, number][]; // [lng, lat]
+  timingPoints: MapTimingPoint[];
+  elevations: [number, number][]; // [distance, elevation]
+}
+
+export interface MapData {
+  event_id: number;
+  map_id: number;
+  eventName: string;
+  eventDate: string | null;
+  distanceUnit: string;
+  elevationUnit: string;
+  courses: MapCourse[];
+}

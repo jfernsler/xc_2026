@@ -4,6 +4,8 @@ export const TABS: [string, string][] = [
   ["planner", "🎯 Overtake"],
   ["scenario", "🔀 Scenario"],
   ["analysis", "📈 Analysis"],
+  ["splits", "⏱️ Splits"],
+  ["map", "🗺️ Map"],
   ["report", "📋 Report"],
 ];
 
