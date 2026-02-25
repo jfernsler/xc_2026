@@ -9,8 +9,8 @@ import {
   elevationAtDistance,
   segmentSlopeAndElev,
   punchySegmentIndex,
-  mostClimbingSegmentIndex,
-  leastClimbingSegmentIndex,
+  mostClimbingSegmentIndices,
+  leastClimbingSegmentIndices,
 } from "../utils/map";
 
 interface MapTabProps {
@@ -64,9 +64,10 @@ const MAP_HEIGHT = 320;
 const ELEV_WIDTH = 800;
 const ELEV_HEIGHT = 140;
 
+export type CourseColorBy = "none" | "elevation" | "slope";
+
 export interface MapVizOptions {
-  elevationOnCourse: boolean;
-  slopeOnCourse: boolean;
+  courseColorBy: CourseColorBy;
   punchy: boolean;
   mostClimbing: boolean;
   leastClimbing: boolean;
@@ -78,6 +79,30 @@ function lerpColor(a: string, b: string, t: number): string {
   const [r0, g0, b0] = parse(a);
   const [r1, g1, b1] = parse(b);
   return `#${hex(r0 + (r1 - r0) * t)}${hex(g0 + (g1 - g0) * t)}${hex(b0 + (b1 - b0) * t)}`;
+}
+
+/** Multi-stop gradient: stops are [t, hex] with t in 0..1. */
+function gradientColor(stops: [number, string][], t: number): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, c0] = stops[i]!;
+    const [t1, c1] = stops[i + 1]!;
+    if (clamped <= t1) {
+      const tLocal = t0 === t1 ? 1 : (clamped - t0) / (t1 - t0);
+      return lerpColor(c0, c1, tLocal);
+    }
+  }
+  return stops[stops.length - 1]![1];
+}
+
+/** Non-linear slope -> t for coloring: flat is a wider band, steep grades stand out. */
+function slopeToT(slope: number): number {
+  const atan = Math.atan;
+  const scale = 4;
+  const raw = atan(slope * scale);
+  const maxAtan = atan(scale * 0.25);
+  const minAtan = atan(scale * -0.15);
+  return (raw - minAtan) / (maxAtan - minAtan);
 }
 
 function CourseAndElevation({
@@ -102,15 +127,13 @@ function CourseAndElevation({
     [coords, cumulMiles, elevations]
   );
   const punchyIdx = useMemo(() => punchySegmentIndex(segments), [segments]);
-  const mostIdx = useMemo(() => mostClimbingSegmentIndex(segments), [segments]);
-  const leastIdx = useMemo(() => leastClimbingSegmentIndex(segments), [segments]);
+  const mostClimbingIndices = useMemo(() => mostClimbingSegmentIndices(segments), [segments]);
+  const leastClimbingIndices = useMemo(() => leastClimbingSegmentIndices(segments), [segments]);
   const elevRange = useMemo(() => {
     if (!segments.length) return { min: 0, max: 1 };
     const elevs = segments.map((s) => s.elev);
     return { min: Math.min(...elevs), max: Math.max(...elevs) || 1 };
   }, [segments]);
-  /** Fixed scale for MTB: 0% = green, 25% grade = red. Slope is already rise/run (e.g. 0.2 = 20%). */
-  const slopeRangeMTB = useMemo(() => ({ min: 0, max: 0.25 }), []);
 
   const project = useCallback(
     (lng: number, lat: number) => {
@@ -214,15 +237,25 @@ function CourseAndElevation({
   const hoverElevX = hoverDistance != null ? elevData.x(hoverDistance) : null;
 
   const timingPoints = course.timingPoints ?? [];
-  const useViz = vizOptions.elevationOnCourse || vizOptions.slopeOnCourse || vizOptions.punchy || vizOptions.mostClimbing || vizOptions.leastClimbing;
+  const useViz = vizOptions.courseColorBy !== "none" || vizOptions.punchy || vizOptions.mostClimbing || vizOptions.leastClimbing;
 
   const pathContent = useMemo(() => {
     if (!useViz || !coords.length) return <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />;
     const segEls: JSX.Element[] = [];
     const highlightIndices = new Set<number>();
     if (vizOptions.punchy && punchyIdx >= 0) highlightIndices.add(punchyIdx);
-    if (vizOptions.mostClimbing && mostIdx >= 0) highlightIndices.add(mostIdx);
-    if (vizOptions.leastClimbing && leastIdx >= 0) highlightIndices.add(leastIdx);
+    if (vizOptions.mostClimbing) mostClimbingIndices.forEach((k) => highlightIndices.add(k));
+    if (vizOptions.leastClimbing) leastClimbingIndices.forEach((k) => highlightIndices.add(k));
+
+    const slopeStops: [number, string][] = [
+      [0, "#22c55e"],
+      [0.2, "#06b6d4"],
+      [0.4, "#1e293b"],
+      [0.5, "#1e293b"],
+      [0.6, "#eab308"],
+      [0.8, "#f97316"],
+      [1, "#dc2626"],
+    ];
 
     for (let i = 0; i < coords.length - 1; i++) {
       const a = project(coords[i]![0], coords[i]![1]);
@@ -230,19 +263,19 @@ function CourseAndElevation({
       const isHighlight = highlightIndices.has(i);
       let stroke = "currentColor";
       if (vizOptions.punchy && i === punchyIdx) stroke = "#dc2626";
-      else if (vizOptions.mostClimbing && i === mostIdx) stroke = "#15803d";
-      else if (vizOptions.leastClimbing && i === leastIdx) stroke = "#2563eb";
-      else if (vizOptions.elevationOnCourse) {
+      else if (vizOptions.mostClimbing && mostClimbingIndices.has(i)) stroke = "#15803d";
+      else if (vizOptions.leastClimbing && leastClimbingIndices.has(i)) stroke = "#2563eb";
+      else if (vizOptions.courseColorBy === "elevation") {
         const t = (segments[i]!.elev - elevRange.min) / (elevRange.max - elevRange.min || 1);
         stroke = lerpColor("#22c55e", "#92400e", t);
-      } else if (vizOptions.slopeOnCourse) {
-        const t = Math.min(1, Math.max(0, segments[i]!.slope / slopeRangeMTB.max));
-        stroke = lerpColor("#22c55e", "#dc2626", t);
+      } else if (vizOptions.courseColorBy === "slope") {
+        const t = slopeToT(segments[i]!.slope);
+        stroke = gradientColor(slopeStops, t);
       }
       segEls.push(<line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={isHighlight ? 8 : 2.5} strokeLinecap="round" />);
     }
     return <g>{segEls}</g>;
-  }, [useViz, coords, path, project, segments, punchyIdx, mostIdx, leastIdx, elevRange, slopeRangeMTB, vizOptions]);
+  }, [useViz, coords, path, project, segments, punchyIdx, mostClimbingIndices, leastClimbingIndices, elevRange, vizOptions]);
 
   return (
     <div className="w-full">
@@ -367,8 +400,7 @@ function CourseAndElevation({
 }
 
 const DEFAULT_VIZ: MapVizOptions = {
-  elevationOnCourse: false,
-  slopeOnCourse: false,
+  courseColorBy: "none",
   punchy: false,
   mostClimbing: false,
   leastClimbing: false,
@@ -381,8 +413,12 @@ export function MapTab({ eventId, raceName }: MapTabProps) {
   const [courseIndex, setCourseIndex] = useState(0);
   const [vizOptions, setVizOptions] = useState<MapVizOptions>(DEFAULT_VIZ);
 
-  const setViz = useCallback((key: keyof MapVizOptions, value: boolean) => {
+  const setViz = useCallback((key: keyof MapVizOptions, value: boolean | CourseColorBy) => {
     setVizOptions((p) => ({ ...p, [key]: value }));
+  }, []);
+
+  const setCourseColorBy = useCallback((value: CourseColorBy) => {
+    setVizOptions((p) => ({ ...p, courseColorBy: value }));
   }, []);
 
   useEffect(() => {
@@ -480,24 +516,39 @@ export function MapTab({ eventId, raceName }: MapTabProps) {
 
       <div className="w-48 shrink-0 flex flex-col gap-3">
         <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Visualization</h3>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={vizOptions.elevationOnCourse}
-            onChange={(e) => setViz("elevationOnCourse", e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Elevation on course
-        </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={vizOptions.slopeOnCourse}
-            onChange={(e) => setViz("slopeOnCourse", e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Slope on course
-        </label>
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="text-[11px] text-slate-500 dark:text-slate-400 mb-0.5">Course color</legend>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+            <input
+              type="radio"
+              name="courseColorBy"
+              checked={vizOptions.courseColorBy === "none"}
+              onChange={() => setCourseColorBy("none")}
+              className="border-slate-300 dark:border-slate-600"
+            />
+            None
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+            <input
+              type="radio"
+              name="courseColorBy"
+              checked={vizOptions.courseColorBy === "elevation"}
+              onChange={() => setCourseColorBy("elevation")}
+              className="border-slate-300 dark:border-slate-600"
+            />
+            Elevation
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
+            <input
+              type="radio"
+              name="courseColorBy"
+              checked={vizOptions.courseColorBy === "slope"}
+              onChange={() => setCourseColorBy("slope")}
+              className="border-slate-300 dark:border-slate-600"
+            />
+            Slope
+          </label>
+        </fieldset>
         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
           <input
             type="checkbox"

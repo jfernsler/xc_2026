@@ -175,34 +175,60 @@ export function punchySegmentIndex(segments: { slope: number }[]): number {
   return best;
 }
 
-/** Index of segment with largest elevation gain (most climbing). */
-export function mostClimbingSegmentIndex(segments: { slope: number; distStart: number; distEnd: number }[]): number {
-  if (!segments.length) return -1;
-  let best = 0;
-  let bestGain = -Infinity;
-  for (let i = 0; i < segments.length; i++) {
-    const s = segments[i]!;
-    const gain = s.slope * ((s.distEnd - s.distStart) * 5280);
-    if (gain > bestGain) {
-      bestGain = gain;
-      best = i;
-    }
-  }
-  return best;
+/** Segment elevation gain in feet (rise). */
+function segmentGainFt(s: { slope: number; distStart: number; distEnd: number }): number {
+  return s.slope * ((s.distEnd - s.distStart) * 5280);
 }
 
-/** Index of segment with smallest elevation gain / most descent (least climbing). */
-export function leastClimbingSegmentIndex(segments: { slope: number; distStart: number; distEnd: number }[]): number {
-  if (!segments.length) return -1;
-  let best = 0;
-  let bestGain = Infinity;
+/** Indices of segments in the window (by distance) with largest total elevation gain (sustained climb). Allows flats/small descents within the window. */
+const CLIMB_WINDOW_MI = 0.2;
+
+export function mostClimbingSegmentIndices(segments: { slope: number; distStart: number; distEnd: number }[]): Set<number> {
+  if (!segments.length) return new Set();
+  let bestStart = 0;
+  let bestEnd = 0;
+  let bestGain = -Infinity;
   for (let i = 0; i < segments.length; i++) {
-    const s = segments[i]!;
-    const gain = s.slope * ((s.distEnd - s.distStart) * 5280);
-    if (gain < bestGain) {
-      bestGain = gain;
-      best = i;
+    const startDist = segments[i]!.distStart;
+    let totalGain = 0;
+    for (let j = i; j < segments.length; j++) {
+      const endDist = segments[j]!.distEnd;
+      if (endDist - startDist > CLIMB_WINDOW_MI) break;
+      totalGain += segmentGainFt(segments[j]!);
+      if (totalGain > bestGain) {
+        bestGain = totalGain;
+        bestStart = i;
+        bestEnd = j;
+      }
     }
   }
-  return best;
+  const out = new Set<number>();
+  for (let k = bestStart; k <= bestEnd; k++) out.add(k);
+  return out;
 }
+
+/** Indices of segments in the window with most descent (least climbing). */
+export function leastClimbingSegmentIndices(segments: { slope: number; distStart: number; distEnd: number }[]): Set<number> {
+  if (!segments.length) return new Set();
+  let bestStart = 0;
+  let bestEnd = 0;
+  let bestGain = Infinity;
+  for (let i = 0; i < segments.length; i++) {
+    const startDist = segments[i]!.distStart;
+    let totalGain = 0;
+    for (let j = i; j < segments.length; j++) {
+      const endDist = segments[j]!.distEnd;
+      if (endDist - startDist > CLIMB_WINDOW_MI) break;
+      totalGain += segmentGainFt(segments[j]!);
+      if (totalGain < bestGain) {
+        bestGain = totalGain;
+        bestStart = i;
+        bestEnd = j;
+      }
+    }
+  }
+  const out = new Set<number>();
+  for (let k = bestStart; k <= bestEnd; k++) out.add(k);
+  return out;
+}
+
