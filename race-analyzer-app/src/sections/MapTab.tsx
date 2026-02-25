@@ -148,6 +148,7 @@ function CourseAndElevation({
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panStart = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
+  const [elevViewRange, setElevViewRange] = useState<{ distMin: number; distMax: number } | null>(null);
 
   const distMin = elevations.length ? elevations[0]![0] : 0;
   const distMax = elevations.length ? elevations[elevations.length - 1]![0] : totalDist;
@@ -157,14 +158,16 @@ function CourseAndElevation({
   );
 
   const elevData = useMemo(() => {
-    if (!elevations.length) return { path: "", distMin: 0, distMax: 0, spanD: 1, spanE: 1, elevMin: 0, elevMax: 0, x: (_: number) => 0, y: (_: number) => 0 };
+    if (!elevations.length) return { path: "", distMin: 0, distMax: 0, dataMin: 0, dataMax: 0, spanD: 1, spanE: 1, elevMin: 0, elevMax: 0, x: (_: number) => 0, y: (_: number) => 0 };
     const dists = elevations.map((e) => e[0]);
     const elevs = elevations.map((e) => e[1]);
-    const dMin = Math.min(...dists);
-    const dMax = Math.max(...dists);
+    const dataMin = Math.min(...dists);
+    const dataMax = Math.max(...dists);
+    const dMin = elevViewRange?.distMin ?? dataMin;
+    const dMax = elevViewRange?.distMax ?? dataMax;
+    const spanD = (dMax - dMin) || 1;
     const eMin = Math.min(...elevs);
     const eMax = Math.max(...elevs);
-    const spanD = dMax - dMin || 1;
     const spanE = eMax - eMin || 1;
     const pad = 0.05;
     const w = ELEV_WIDTH * (1 - 2 * pad);
@@ -173,6 +176,8 @@ function CourseAndElevation({
       path: "",
       distMin: dMin,
       distMax: dMax,
+      dataMin,
+      dataMax,
       spanD,
       spanE,
       elevMin: eMin,
@@ -180,13 +185,29 @@ function CourseAndElevation({
       x: (d: number) => ELEV_WIDTH * pad + ((d - dMin) / spanD) * w,
       y: (e: number) => ELEV_HEIGHT * (1 - pad) - ((e - eMin) / spanE) * h,
     };
-  }, [elevations]);
+  }, [elevations, elevViewRange]);
 
   const elevPath = useMemo(() => {
     if (!elevations.length) return "";
-    return elevations
-      .map(([d, e], i) => `${i === 0 ? "M" : "L"} ${elevData.x(d)} ${elevData.y(e)}`)
-      .join(" ");
+    const { distMin, distMax } = elevData;
+    const points = elevations.filter(([d]) => d >= distMin - 1e-6 && d <= distMax + 1e-6);
+    if (points.length === 0) return "";
+    const first = points[0]!;
+    const last = points[points.length - 1]!;
+    const needStart = first[0] > distMin;
+    const needEnd = last[0] < distMax;
+    const out: [number, number][] = [];
+    if (needStart && elevations[0]) {
+      const e0 = elevationAtDistance(elevations, distMin);
+      if (e0 != null) out.push([distMin, e0]);
+    }
+    points.forEach(([d, e]) => out.push([d, e]));
+    if (needEnd && elevations.length) {
+      const e1 = elevationAtDistance(elevations, distMax);
+      if (e1 != null) out.push([distMax, e1]);
+    }
+    const pts = out.length ? out : points;
+    return pts.map(([d, e], i) => `${i === 0 ? "M" : "L"} ${elevData.x(d)} ${elevData.y(e)}`).join(" ");
   }, [elevations, elevData]);
 
   const handleCourseMouseMove = useCallback(
@@ -352,16 +373,66 @@ function CourseAndElevation({
     }
   }, [dragStart, dragCurrent]);
 
+  const handleElevationWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (!elevations.length) return;
+      e.preventDefault();
+      const dist = xToDist(e.clientX);
+      const dMin = elevData.distMin;
+      const dMax = elevData.distMax;
+      const dataMin = elevData.dataMin ?? dMin;
+      const dataMax = elevData.dataMax ?? dMax;
+      const fullSpan = dataMax - dataMin;
+      const minSpan = Math.max(0.02, fullSpan * 0.05);
+      const delta = e.deltaY > 0 ? 1 : -1;
+      const factor = delta > 0 ? 1 / 1.15 : 1.15;
+      let newSpan = (dMax - dMin) * factor;
+      if (newSpan < minSpan) newSpan = minSpan;
+      if (newSpan >= fullSpan * 0.99) {
+        setElevViewRange(null);
+        return;
+      }
+      const center = dist;
+      let newMin = center - newSpan / 2;
+      let newMax = center + newSpan / 2;
+      if (newMin < dataMin) {
+        newMin = dataMin;
+        newMax = Math.min(dataMax, dataMin + newSpan);
+      }
+      if (newMax > dataMax) {
+        newMax = dataMax;
+        newMin = Math.max(dataMin, dataMax - newSpan);
+      }
+      setElevViewRange({ distMin: newMin, distMax: newMax });
+    },
+    [elevations.length, xToDist, elevData]
+  );
+
+  const resetElevationView = useCallback(() => setElevViewRange(null), []);
+
   const mapCenter = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
   const transform = `translate(${mapCenter.x + pan.x}, ${mapCenter.y + pan.y}) scale(${scale}) translate(${-mapCenter.x}, ${-mapCenter.y})`;
 
   const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+    (e: React.WheelEvent<SVGSVGElement>) => {
       e.preventDefault();
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const vb = svg.viewBox.baseVal;
+      const viewX = (e.clientX - rect.left) * (vb.width / rect.width);
+      const viewY = (e.clientY - rect.top) * (vb.height / rect.height);
+      const cx = MAP_WIDTH / 2;
+      const cy = MAP_HEIGHT / 2;
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setScale((s) => Math.min(4, Math.max(0.4, s + delta)));
+      const newScale = Math.min(4, Math.max(0.4, scale + delta));
+      setPan({
+        x: pan.x * (newScale / scale) + (viewX - cx) * (1 - newScale / scale),
+        y: pan.y * (newScale / scale) + (viewY - cy) * (1 - newScale / scale),
+      });
+      setScale(newScale);
     },
-    []
+    [scale, pan]
   );
 
   const handleMapMouseDown = useCallback(
@@ -532,8 +603,20 @@ function CourseAndElevation({
       </div>
 
       <div className="mt-4 w-full">
-        <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-0.5">
-          Elevation ({elevationUnit}) vs distance ({distanceUnit}) — hover course or chart to sync
+        <div className="flex items-center justify-between gap-2 mb-0.5">
+          <span className="text-[10px] text-slate-500 dark:text-slate-400">
+            Elevation ({elevationUnit}) vs distance ({distanceUnit}) — hover or wheel to zoom
+          </span>
+          {elevViewRange != null && (
+            <button
+              type="button"
+              onClick={resetElevationView}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-500"
+              title="Reset elevation zoom"
+            >
+              ⌂ Reset
+            </button>
+          )}
         </div>
         <div
           ref={elevRef}
@@ -542,6 +625,7 @@ function CourseAndElevation({
           onMouseMove={handleElevationMouseMove}
           onMouseUp={handleElevationMouseUp}
           onMouseLeave={handleElevationMouseLeave}
+          onWheel={handleElevationWheel}
           style={{ height: ELEV_HEIGHT }}
         >
           <svg width="100%" height={ELEV_HEIGHT} viewBox={`0 0 ${ELEV_WIDTH} ${ELEV_HEIGHT}`} preserveAspectRatio="none" className="block cursor-crosshair">
@@ -556,21 +640,23 @@ function CourseAndElevation({
               />
             )}
             <path d={elevPath} fill="none" stroke="currentColor" strokeWidth={1.5} className="text-sky-500 dark:text-sky-400" />
-            {mileMarkers.map((mi) => {
-              const x = elevData.x(mi);
-              return (
-                <line
-                  key={mi}
-                  x1={x}
-                  y1={0}
-                  x2={x}
-                  y2={ELEV_HEIGHT}
-                  stroke="rgb(148 163 184)"
-                  strokeWidth={0.5}
-                  className="dark:stroke-slate-500"
-                />
-              );
-            })}
+            {mileMarkers
+              .filter((mi) => mi >= elevData.distMin && mi <= elevData.distMax)
+              .map((mi) => {
+                const x = elevData.x(mi);
+                return (
+                  <line
+                    key={mi}
+                    x1={x}
+                    y1={0}
+                    x2={x}
+                    y2={ELEV_HEIGHT}
+                    stroke="rgb(148 163 184)"
+                    strokeWidth={0.5}
+                    className="dark:stroke-slate-500"
+                  />
+                );
+              })}
           </svg>
           {hoverElevX != null && hoverElevY != null && (
             <>
