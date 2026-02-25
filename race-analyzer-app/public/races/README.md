@@ -1,7 +1,12 @@
 # Races & maps manifests
 
-- **public/races/manifest.json** — Lists every race/course. Add one entry per race: `{"id": <number>, "name": "...", "year": <number>, "file": "Race_X_....csv"}`. The dropdown shows all races from this file.
-- **public/maps/manifest.json** — Lists races that have map data (course + elevation). Entries use `event_id` (must match a race `id` in races manifest), plus `map_id`, `name`, `file`. Races with map data show a map icon in the dropdown and can use the Map and Splits tabs.
+- **public/races/manifest.json** — Lists every race/course. The dropdown shows all races from this file. Races with map data show a map icon.
+- **public/maps/manifest.json** — Lists races that have map data (course + elevation). `event_id` must match a race `id` in the races manifest.
 
-To add a new race: add the CSV to `public/races/` and add an entry to `public/races/manifest.json`.  
-To add map data for a race: run the map scraper (see repo root), then ensure `public/maps/manifest.json` has an entry with `event_id` equal to that race’s `id`.
+**To include all CSV races in the dropdown:** run from repo root:
+```bash
+node race-analyzer-app/scripts/sync-races-manifest.cjs
+```
+This adds any CSV in `public/races/` that isn’t already in the manifest (existing entries keep their id/name/year). New entries get a generated id and name from the filename.
+
+**To add map data for a race:** run the map scraper (see repo root), then ensure `public/maps/manifest.json` has an entry with `event_id` equal to that race’s `id`.

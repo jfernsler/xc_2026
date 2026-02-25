@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync-races": "node scripts/sync-races-manifest.cjs"
   },
   "dependencies": {
     "lodash": "^4.17.21",

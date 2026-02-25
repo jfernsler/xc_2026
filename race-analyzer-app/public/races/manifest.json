@@ -10,5 +10,65 @@
     "name": "Race 2 - Vail Lake Challenge 2026",
     "year": 2026,
     "file": "Race_2_-_Vail_Lake_Challenge_2026.csv"
+  },
+  {
+    "id": 400001,
+    "name": "Race 1 - Beach to Boulders 2025",
+    "year": 2025,
+    "file": "Race_1_-_Beach_to_Boulders_2025.csv"
+  },
+  {
+    "id": 400003,
+    "name": "Race 2 - Vail Lake Challenge 2025",
+    "year": 2025,
+    "file": "Race_2_-_Vail_Lake_Challenge_2025.csv"
+  },
+  {
+    "id": 400004,
+    "name": "Race 3 - Cachuma 2025",
+    "year": 2025,
+    "file": "Race_3_-_Cachuma_2025.csv"
+  },
+  {
+    "id": 400007,
+    "name": "Race 4 - Victory at Vail 2025",
+    "year": 2025,
+    "file": "Race_4_-_Victory_at_Vail_2025.csv"
+  },
+  {
+    "id": 400009,
+    "name": "Race 5 - Finals 2025",
+    "year": 2025,
+    "file": "Race_5_-_Finals_2025.csv"
+  },
+  {
+    "id": 400000,
+    "name": "Race 1 - Beach to Boulders 2024",
+    "year": 2024,
+    "file": "Race_1_-_Beach_to_Boulders_2024.csv"
+  },
+  {
+    "id": 400002,
+    "name": "Race 2 - Vail Lake Challenge 2024",
+    "year": 2024,
+    "file": "Race_2_-_Vail_Lake_Challenge_2024.csv"
+  },
+  {
+    "id": 400005,
+    "name": "Race 3 - Dam the Torpedoes 2024",
+    "year": 2024,
+    "file": "Race_3_-_Dam_the_Torpedoes_2024.csv"
+  },
+  {
+    "id": 400006,
+    "name": "Race 4 - Victory at Vail 2024",
+    "year": 2024,
+    "file": "Race_4_-_Victory_at_Vail_2024.csv"
+  },
+  {
+    "id": 400008,
+    "name": "Race 5 - Finals 2024",
+    "year": 2024,
+    "file": "Race_5_-_Finals_2024.csv"
   }
 ]
