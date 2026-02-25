@@ -8,9 +8,6 @@ import {
   svgPointToDistance,
   elevationAtDistance,
   segmentSlopeAndElev,
-  punchySegmentIndex,
-  mostClimbingSegmentIndices,
-  leastClimbingSegmentIndices,
 } from "../utils/map";
 
 interface MapTabProps {
@@ -68,9 +65,6 @@ export type CourseColorBy = "none" | "elevation" | "slope";
 
 export interface MapVizOptions {
   courseColorBy: CourseColorBy;
-  punchy: boolean;
-  mostClimbing: boolean;
-  leastClimbing: boolean;
 }
 
 function lerpColor(a: string, b: string, t: number): string {
@@ -126,9 +120,6 @@ function CourseAndElevation({
     () => segmentSlopeAndElev(coords, cumulMiles, elevations),
     [coords, cumulMiles, elevations]
   );
-  const punchyIdx = useMemo(() => punchySegmentIndex(segments), [segments]);
-  const mostClimbingIndices = useMemo(() => mostClimbingSegmentIndices(segments), [segments]);
-  const leastClimbingIndices = useMemo(() => leastClimbingSegmentIndices(segments), [segments]);
   const elevRange = useMemo(() => {
     if (!segments.length) return { min: 0, max: 1 };
     const elevs = segments.map((s) => s.elev);
@@ -154,6 +145,9 @@ function CourseAndElevation({
   const [hoverDistance, setHoverDistance] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const elevRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panStart = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
 
   const distMin = elevations.length ? elevations[0]![0] : 0;
   const distMax = elevations.length ? elevations[elevations.length - 1]![0] : totalDist;
@@ -203,32 +197,17 @@ function CourseAndElevation({
       const vb = svg.viewBox.baseVal;
       const scaleX = vb.width / rect.width;
       const scaleY = vb.height / rect.height;
-      const svgX = (e.clientX - rect.left) * scaleX;
-      const svgY = (e.clientY - rect.top) * scaleY;
-      const dist = svgPointToDistance(svgX, svgY, coords, cumulMiles, project);
+      const viewX = (e.clientX - rect.left) * scaleX;
+      const viewY = (e.clientY - rect.top) * scaleY;
+      const pathX = (viewX - pan.x) / scale + (MAP_WIDTH / 2) * (1 - 1 / scale);
+      const pathY = (viewY - pan.y) / scale + (MAP_HEIGHT / 2) * (1 - 1 / scale);
+      const dist = svgPointToDistance(pathX, pathY, coords, cumulMiles, project);
       setHoverDistance(dist ?? null);
     },
-    [coords, cumulMiles, project]
+    [coords, cumulMiles, project, pan, scale]
   );
 
   const handleCourseMouseLeave = useCallback(() => setHoverDistance(null), []);
-
-  const handleElevationMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      const el = elevRef.current;
-      if (!el || !elevations.length) return;
-      const rect = el.getBoundingClientRect();
-      const pad = 0.05;
-      const innerLeft = pad * rect.width;
-      const innerWidth = rect.width * (1 - 2 * pad);
-      const x = e.clientX - rect.left - innerLeft;
-      if (x < 0 || x > innerWidth) return;
-      const frac = x / innerWidth;
-      const d = elevData.distMin + frac * (elevData.distMax - elevData.distMin);
-      setHoverDistance(d);
-    },
-    [elevations.length, elevData]
-  );
 
   const hoverCoord = hoverDistance != null ? distanceToCoord(coords, hoverDistance, cumulMiles) : null;
   const hoverProjected = hoverCoord ? project(hoverCoord[0], hoverCoord[1]) : null;
@@ -237,16 +216,39 @@ function CourseAndElevation({
   const hoverElevX = hoverDistance != null ? elevData.x(hoverDistance) : null;
 
   const timingPoints = course.timingPoints ?? [];
-  const useViz = vizOptions.courseColorBy !== "none" || vizOptions.punchy || vizOptions.mostClimbing || vizOptions.leastClimbing;
+  const useViz = vizOptions.courseColorBy !== "none";
+
+  const [selectedRange, setSelectedRange] = useState<{ distMin: number; distMax: number } | null>(null);
+  const [dragStart, setDragStart] = useState<{ dist: number } | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<number | null>(null);
+
+  const dragRef = useRef({ dragStart, dragCurrent });
+  dragRef.current = { dragStart, dragCurrent };
+  useEffect(() => {
+    const onUp = () => {
+      const { dragStart: start, dragCurrent: cur } = dragRef.current;
+      if (start != null && cur != null) {
+        const a = Math.min(start.dist, cur);
+        const b = Math.max(start.dist, cur);
+        if (b - a > 0.001) setSelectedRange({ distMin: a, distMax: b });
+      }
+      setDragStart(null);
+      setDragCurrent(null);
+    };
+    window.addEventListener("mouseup", onUp);
+    return () => window.removeEventListener("mouseup", onUp);
+  }, []);
+
+  const selectionSegmentIndices = useMemo(() => {
+    if (!selectedRange || !segments.length) return new Set<number>();
+    const set = new Set<number>();
+    segments.forEach((seg, i) => {
+      if (seg.distEnd > selectedRange.distMin && seg.distStart < selectedRange.distMax) set.add(i);
+    });
+    return set;
+  }, [selectedRange, segments]);
 
   const pathContent = useMemo(() => {
-    if (!useViz || !coords.length) return <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />;
-    const segEls: JSX.Element[] = [];
-    const highlightIndices = new Set<number>();
-    if (vizOptions.punchy && punchyIdx >= 0) highlightIndices.add(punchyIdx);
-    if (vizOptions.mostClimbing) mostClimbingIndices.forEach((k) => highlightIndices.add(k));
-    if (vizOptions.leastClimbing) leastClimbingIndices.forEach((k) => highlightIndices.add(k));
-
     const slopeStops: [number, string][] = [
       [0, "#22c55e"],
       [0.2, "#06b6d4"],
@@ -257,41 +259,200 @@ function CourseAndElevation({
       [1, "#dc2626"],
     ];
 
-    for (let i = 0; i < coords.length - 1; i++) {
-      const a = project(coords[i]![0], coords[i]![1]);
-      const b = project(coords[i + 1]![0], coords[i + 1]![1]);
-      const isHighlight = highlightIndices.has(i);
-      let stroke = "currentColor";
-      if (vizOptions.punchy && i === punchyIdx) stroke = "#dc2626";
-      else if (vizOptions.mostClimbing && mostClimbingIndices.has(i)) stroke = "#15803d";
-      else if (vizOptions.leastClimbing && leastClimbingIndices.has(i)) stroke = "#2563eb";
-      else if (vizOptions.courseColorBy === "elevation") {
-        const t = (segments[i]!.elev - elevRange.min) / (elevRange.max - elevRange.min || 1);
-        stroke = lerpColor("#22c55e", "#92400e", t);
-      } else if (vizOptions.courseColorBy === "slope") {
-        const t = slopeToT(segments[i]!.slope);
-        stroke = gradientColor(slopeStops, t);
+    const els: JSX.Element[] = [];
+
+    if (coords.length === 0) return <g />;
+
+    if (selectionSegmentIndices.size > 0) {
+      for (let i = 0; i < coords.length - 1; i++) {
+        if (!selectionSegmentIndices.has(i)) continue;
+        const a = project(coords[i]![0], coords[i]![1]);
+        const b = project(coords[i + 1]![0], coords[i + 1]![1]);
+        els.push(<line key={`sel-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#0ea5e9" strokeWidth={8} strokeLinecap="round" />);
       }
-      segEls.push(<line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={isHighlight ? 8 : 2.5} strokeLinecap="round" />);
     }
-    return <g>{segEls}</g>;
-  }, [useViz, coords, path, project, segments, punchyIdx, mostClimbingIndices, leastClimbingIndices, elevRange, vizOptions]);
+
+    if (!useViz) {
+      els.push(<path key="path" d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />);
+    } else {
+      for (let i = 0; i < coords.length - 1; i++) {
+        const a = project(coords[i]![0], coords[i]![1]);
+        const b = project(coords[i + 1]![0], coords[i + 1]![1]);
+        let stroke = "currentColor";
+        if (vizOptions.courseColorBy === "elevation") {
+          const t = (segments[i]!.elev - elevRange.min) / (elevRange.max - elevRange.min || 1);
+          stroke = lerpColor("#22c55e", "#92400e", t);
+        } else if (vizOptions.courseColorBy === "slope") {
+          const t = slopeToT(segments[i]!.slope);
+          stroke = gradientColor(slopeStops, t);
+        }
+        els.push(<line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={2.5} strokeLinecap="round" />);
+      }
+    }
+    return <g>{els}</g>;
+  }, [useViz, coords, path, project, segments, elevRange, vizOptions, selectionSegmentIndices]);
+
+  const xToDist = useCallback(
+    (clientX: number) => {
+      const el = elevRef.current;
+      if (!el || !elevations.length) return elevData.distMin;
+      const rect = el.getBoundingClientRect();
+      const pad = 0.05;
+      const innerLeft = pad * rect.width;
+      const innerWidth = rect.width * (1 - 2 * pad);
+      const x = clientX - rect.left - innerLeft;
+      const frac = Math.max(0, Math.min(1, x / innerWidth));
+      return elevData.distMin + frac * (elevData.distMax - elevData.distMin);
+    },
+    [elevations.length, elevData]
+  );
+
+  const handleElevationMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!elevations.length) return;
+      const dist = xToDist(e.clientX);
+      setDragStart({ dist });
+      setDragCurrent(dist);
+      setSelectedRange(null);
+    },
+    [elevations.length, xToDist]
+  );
+
+  const handleElevationMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      const el = elevRef.current;
+      if (!el || !elevations.length) return;
+      const d = xToDist(e.clientX);
+      if (dragStart != null) setDragCurrent(d);
+      else setHoverDistance(d);
+    },
+    [elevations.length, xToDist, dragStart]
+  );
+
+  const handleElevationMouseUp = useCallback(() => {
+    if (dragStart != null && dragCurrent != null) {
+      const a = Math.min(dragStart.dist, dragCurrent);
+      const b = Math.max(dragStart.dist, dragCurrent);
+      if (b - a > 0.001) setSelectedRange({ distMin: a, distMax: b });
+    }
+    setDragStart(null);
+    setDragCurrent(null);
+  }, [dragStart, dragCurrent]);
+
+  const handleElevationMouseLeave = useCallback(() => {
+    setHoverDistance(null);
+    if (dragStart != null) {
+      if (dragCurrent != null) {
+        const a = Math.min(dragStart.dist, dragCurrent);
+        const b = Math.max(dragStart.dist, dragCurrent);
+        if (b - a > 0.001) setSelectedRange({ distMin: a, distMax: b });
+      }
+      setDragStart(null);
+      setDragCurrent(null);
+    }
+  }, [dragStart, dragCurrent]);
+
+  const mapCenter = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
+  const transform = `translate(${mapCenter.x + pan.x}, ${mapCenter.y + pan.y}) scale(${scale}) translate(${-mapCenter.x}, ${-mapCenter.y})`;
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setScale((s) => Math.min(4, Math.max(0.4, s + delta)));
+    },
+    []
+  );
+
+  const handleMapMouseDown = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (e.button !== 0) return;
+      panStart.current = { x: e.clientX, y: e.clientY, vx: pan.x, vy: pan.y };
+    },
+    [pan]
+  );
+
+  const handleMapMouseMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (panStart.current) {
+        setPan({ x: panStart.current.vx + e.clientX - panStart.current.x, y: panStart.current.vy + e.clientY - panStart.current.y });
+      } else {
+        handleCourseMouseMove(e);
+      }
+    },
+    [handleCourseMouseMove]
+  );
+
+  const handleMapMouseUp = useCallback(() => {
+    panStart.current = null;
+  }, []);
+
+  const handleMapMouseLeave = useCallback(() => {
+    panStart.current = null;
+    handleCourseMouseLeave();
+  }, [handleCourseMouseLeave]);
+
+  const resetView = useCallback(() => {
+    setScale(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  const dragRange = useMemo(() => {
+    if (dragStart == null || dragCurrent == null) return null;
+    return { distMin: Math.min(dragStart.dist, dragCurrent), distMax: Math.max(dragStart.dist, dragCurrent) };
+  }, [dragStart, dragCurrent]);
+
+  const showRange = selectedRange ?? dragRange;
+  const startPoint = coords.length > 0 ? project(coords[0]![0], coords[0]![1]) : null;
 
   return (
     <div className="w-full">
       <div
-        className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-800/50"
-        onMouseLeave={handleCourseMouseLeave}
+        className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-800/50 relative"
+        onMouseLeave={handleMapMouseLeave}
       >
+        <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setScale((s) => Math.min(4, s + 0.25))}
+            className="w-8 h-8 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-lg leading-none shadow"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => setScale((s) => Math.max(0.4, s - 0.25))}
+            className="w-8 h-8 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-lg leading-none shadow"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={resetView}
+            className="w-8 h-8 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 text-xs font-medium shadow"
+            title="Reset view"
+          >
+            ⌂
+          </button>
+        </div>
         <svg
           ref={svgRef}
           width="100%"
           viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
           preserveAspectRatio="xMidYMid meet"
           className="block text-slate-700 dark:text-slate-300 cursor-crosshair"
-          onMouseMove={handleCourseMouseMove}
+          onWheel={handleWheel}
+          onMouseDown={handleMapMouseDown}
+          onMouseMove={handleMapMouseMove}
+          onMouseUp={handleMapMouseUp}
         >
+          <g transform={transform}>
           {pathContent}
+          {startPoint && (
+            <g transform={`translate(${startPoint.x}, ${startPoint.y})`}>
+              <path d="M0,-10 L6,8 L-6,8 Z" fill="#16a34a" stroke="white" strokeWidth={1.5} className="dark:stroke-slate-800" />
+            </g>
+          )}
           {mileMarkers.map((mi) => {
             const pt = distanceToCoord(coords, mi, cumulMiles);
             if (!pt) return null;
@@ -331,10 +492,15 @@ function CourseAndElevation({
               className="pointer-events-none dark:stroke-slate-800"
             />
           )}
+          </g>
         </svg>
       </div>
 
       <div className="flex items-center gap-4 mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-0 h-0 border-l-[5px] border-r-[5px] border-b-[8px] border-l-transparent border-r-transparent border-b-green-500 shrink-0" aria-hidden style={{ marginBottom: 2 }} />
+          Start
+        </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-500 border border-white dark:border-slate-800 shrink-0" aria-hidden />
           Timing points
@@ -351,12 +517,24 @@ function CourseAndElevation({
         </div>
         <div
           ref={elevRef}
-          className="w-full border border-slate-200 dark:border-slate-600 rounded bg-slate-50 dark:bg-slate-800/30 overflow-hidden relative"
+          className="w-full border border-slate-200 dark:border-slate-600 rounded bg-slate-50 dark:bg-slate-800/30 overflow-hidden relative select-none"
+          onMouseDown={handleElevationMouseDown}
           onMouseMove={handleElevationMouseMove}
-          onMouseLeave={handleCourseMouseLeave}
+          onMouseUp={handleElevationMouseUp}
+          onMouseLeave={handleElevationMouseLeave}
           style={{ height: ELEV_HEIGHT }}
         >
           <svg width="100%" height={ELEV_HEIGHT} viewBox={`0 0 ${ELEV_WIDTH} ${ELEV_HEIGHT}`} preserveAspectRatio="none" className="block cursor-crosshair">
+            {showRange && (
+              <rect
+                x={Math.min(elevData.x(showRange.distMin), elevData.x(showRange.distMax))}
+                y={0}
+                width={Math.abs(elevData.x(showRange.distMax) - elevData.x(showRange.distMin))}
+                height={ELEV_HEIGHT}
+                fill="rgba(14,165,233,0.25)"
+                className="pointer-events-none"
+              />
+            )}
             <path d={elevPath} fill="none" stroke="currentColor" strokeWidth={1.5} className="text-sky-500 dark:text-sky-400" />
             {mileMarkers.map((mi) => {
               const x = elevData.x(mi);
@@ -401,9 +579,6 @@ function CourseAndElevation({
 
 const DEFAULT_VIZ: MapVizOptions = {
   courseColorBy: "none",
-  punchy: false,
-  mostClimbing: false,
-  leastClimbing: false,
 };
 
 export function MapTab({ eventId, raceName }: MapTabProps) {
@@ -412,10 +587,6 @@ export function MapTab({ eventId, raceName }: MapTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [courseIndex, setCourseIndex] = useState(0);
   const [vizOptions, setVizOptions] = useState<MapVizOptions>(DEFAULT_VIZ);
-
-  const setViz = useCallback((key: keyof MapVizOptions, value: boolean | CourseColorBy) => {
-    setVizOptions((p) => ({ ...p, [key]: value }));
-  }, []);
 
   const setCourseColorBy = useCallback((value: CourseColorBy) => {
     setVizOptions((p) => ({ ...p, courseColorBy: value }));
@@ -549,33 +720,9 @@ export function MapTab({ eventId, raceName }: MapTabProps) {
             Slope
           </label>
         </fieldset>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={vizOptions.punchy}
-            onChange={(e) => setViz("punchy", e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Punchy (steepest)
-        </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={vizOptions.mostClimbing}
-            onChange={(e) => setViz("mostClimbing", e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Most climbing
-        </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={vizOptions.leastClimbing}
-            onChange={(e) => setViz("leastClimbing", e.target.checked)}
-            className="rounded border-slate-300 dark:border-slate-600"
-          />
-          Least climbing
-        </label>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+          Click-drag on elevation chart to highlight a section on the map. Click to clear.
+        </p>
       </div>
     </div>
   );
