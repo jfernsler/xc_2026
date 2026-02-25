@@ -109,11 +109,8 @@ function CourseAndElevation({
     const elevs = segments.map((s) => s.elev);
     return { min: Math.min(...elevs), max: Math.max(...elevs) || 1 };
   }, [segments]);
-  const slopeRange = useMemo(() => {
-    if (!segments.length) return { min: 0, max: 1 };
-    const slopes = segments.map((s) => s.slope);
-    return { min: Math.min(...slopes), max: Math.max(...slopes) || 1 };
-  }, [segments]);
+  /** Fixed scale for MTB: 0% = green, 25% grade = red. Slope is already rise/run (e.g. 0.2 = 20%). */
+  const slopeRangeMTB = useMemo(() => ({ min: 0, max: 0.25 }), []);
 
   const project = useCallback(
     (lng: number, lat: number) => {
@@ -222,9 +219,15 @@ function CourseAndElevation({
   const pathContent = useMemo(() => {
     if (!useViz || !coords.length) return <path d={path} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />;
     const segEls: JSX.Element[] = [];
+    const highlightIndices = new Set<number>();
+    if (vizOptions.punchy && punchyIdx >= 0) highlightIndices.add(punchyIdx);
+    if (vizOptions.mostClimbing && mostIdx >= 0) highlightIndices.add(mostIdx);
+    if (vizOptions.leastClimbing && leastIdx >= 0) highlightIndices.add(leastIdx);
+
     for (let i = 0; i < coords.length - 1; i++) {
       const a = project(coords[i]![0], coords[i]![1]);
       const b = project(coords[i + 1]![0], coords[i + 1]![1]);
+      const isHighlight = highlightIndices.has(i);
       let stroke = "currentColor";
       if (vizOptions.punchy && i === punchyIdx) stroke = "#dc2626";
       else if (vizOptions.mostClimbing && i === mostIdx) stroke = "#15803d";
@@ -233,13 +236,13 @@ function CourseAndElevation({
         const t = (segments[i]!.elev - elevRange.min) / (elevRange.max - elevRange.min || 1);
         stroke = lerpColor("#22c55e", "#92400e", t);
       } else if (vizOptions.slopeOnCourse) {
-        const t = (segments[i]!.slope - slopeRange.min) / (slopeRange.max - slopeRange.min || 1);
-        stroke = lerpColor("#22c55e", "#dc2626", Math.max(0, Math.min(1, t)));
+        const t = Math.min(1, Math.max(0, segments[i]!.slope / slopeRangeMTB.max));
+        stroke = lerpColor("#22c55e", "#dc2626", t);
       }
-      segEls.push(<line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={2.5} strokeLinecap="round" />);
+      segEls.push(<line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={isHighlight ? 8 : 2.5} strokeLinecap="round" />);
     }
     return <g>{segEls}</g>;
-  }, [useViz, coords, path, project, segments, punchyIdx, mostIdx, leastIdx, elevRange, slopeRange, vizOptions]);
+  }, [useViz, coords, path, project, segments, punchyIdx, mostIdx, leastIdx, elevRange, slopeRangeMTB, vizOptions]);
 
   return (
     <div className="w-full">
@@ -298,11 +301,16 @@ function CourseAndElevation({
         </svg>
       </div>
 
-      {timingPoints.length > 0 && (
-        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-          {timingPoints.length} timing point(s) · Blue = timing, Gray = mile markers
-        </p>
-      )}
+      <div className="flex items-center gap-4 mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-full bg-sky-500 border border-white dark:border-slate-800 shrink-0" aria-hidden />
+          Timing points
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-400 border border-white dark:border-slate-800 shrink-0" aria-hidden />
+          Mile markers
+        </span>
+      </div>
 
       <div className="mt-4 w-full">
         <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-0.5">
