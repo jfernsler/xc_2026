@@ -14,6 +14,24 @@ export function parseTime(s: string | null | undefined): number | null {
   return isNaN(r) ? null : r;
 }
 
+/** Parse time-of-day "H:MM:SS.s" or "H:MM:SS:ff" (4 parts) to seconds. For comparing who was on course at same clock time. */
+export function parseTimeOfDay(s: string | null | undefined): number | null {
+  if (s == null || typeof s !== "string") return null;
+  s = s.trim();
+  if (!s) return null;
+  const p = s.split(":");
+  if (p.length === 3) return parseTime(s);
+  if (p.length === 4) {
+    const h = parseFloat(p[0]);
+    const m = parseFloat(p[1]);
+    const sec = parseFloat(p[2]);
+    const frac = parseFloat(p[3]);
+    if ([h, m, sec, frac].some((n) => isNaN(n))) return null;
+    return h * 3600 + m * 60 + sec + frac / 100;
+  }
+  return null;
+}
+
 /** Format seconds as "M:SS.s" or "H:MM:SS.s" */
 export function formatTime(s: number | null | undefined): string {
   if (s == null) return "--";

@@ -1,7 +1,7 @@
 import type { Rider, SplitData, RiderSplits } from "../types";
 import { REGION_MAP } from "../constants/regions";
 import { detectCategory } from "./category";
-import { parseTime } from "./time";
+import { parseTime, parseTimeOfDay } from "./time";
 
 export interface RaceOption {
   id: number;
@@ -75,7 +75,7 @@ function deriveTotalTime(row: CsvRow): number | null {
 const SPLIT_SECTOR_RE = /^LAP(\d+)_SPLIT(\d+)_SECTOR$/;
 
 /** Build segment labels and keys in lap/split order from CSV headers. */
-function getSegmentKeys(rows: CsvRow[]): { labels: string[]; sectorKeys: string[]; chipKeys: string[] } {
+function getSegmentKeys(rows: CsvRow[]): { labels: string[]; sectorKeys: string[]; chipKeys: string[]; todKeys: string[] } {
   const headers = Object.keys((rows[0] ?? {}) as Record<string, string>);
   const sectorKeys = headers
     .filter((h) => SPLIT_SECTOR_RE.test(h))
@@ -87,18 +87,19 @@ function getSegmentKeys(rows: CsvRow[]): { labels: string[]; sectorKeys: string[
       if (lapA !== lapB) return lapA - lapB;
       return parseInt(ma[2], 10) - parseInt(mb[2], 10);
     });
-  if (sectorKeys.length === 0) return { labels: [], sectorKeys: [], chipKeys: [] };
+  if (sectorKeys.length === 0) return { labels: [], sectorKeys: [], chipKeys: [], todKeys: [] };
   const labels = sectorKeys.map((k) => {
     const m = k.match(SPLIT_SECTOR_RE)!;
     return `L${m[1]}-S${m[2]}`;
   });
   const chipKeys = sectorKeys.map((k) => k.replace(/_SECTOR$/, "_CHIP"));
-  return { labels, sectorKeys, chipKeys };
+  const todKeys = sectorKeys.map((k) => k.replace(/_SECTOR$/, "_TOD"));
+  return { labels, sectorKeys, chipKeys, todKeys };
 }
 
 /** Build SplitData from CSV rows (same row order as csvRowsToRiders). */
 function buildSplitsFromRows(rows: CsvRow[], raceId: number): SplitData | null {
-  const { labels, sectorKeys, chipKeys } = getSegmentKeys(rows);
+  const { labels, sectorKeys, chipKeys, todKeys } = getSegmentKeys(rows);
   if (labels.length === 0) return null;
   const byRiderId: Record<string, RiderSplits> = {};
   const getRow = (row: CsvRow) => row as Record<string, string>;
@@ -106,7 +107,8 @@ function buildSplitsFromRows(rows: CsvRow[], raceId: number): SplitData | null {
     const riderId = `${raceId}-${row.BIB ?? ""}-${row.ID ?? ""}-${i}`;
     const sector = sectorKeys.map((k) => parseTime(getRow(row)[k]));
     const chip = chipKeys.map((k) => parseTime(getRow(row)[k]));
-    byRiderId[riderId] = { sector, chip };
+    const tod = todKeys.map((k) => parseTimeOfDay(getRow(row)[k]));
+    byRiderId[riderId] = { sector, chip, tod };
   });
   return { segmentLabels: labels, byRiderId };
 }

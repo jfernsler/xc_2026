@@ -1,10 +1,10 @@
 import { useState, useMemo } from "react";
 import _ from "lodash";
 import type { Rider, SplitData } from "../types";
-import { formatTime } from "../utils/time";
+import { formatTime, formatDelta } from "../utils/time";
 
 type TimingMode = "chip" | "sector";
-type ViewMode = "splits" | "segment-stats" | "distribution" | "vs-average" | "correlation";
+type ViewMode = "splits" | "segment-stats" | "distribution" | "vs-average" | "correlation" | "gap" | "positions" | "segment-impact";
 
 interface SplitsTabProps {
   raceName: string;
@@ -17,6 +17,12 @@ function getSegmentValues(splits: SplitData, riderId: string, mode: TimingMode):
   const row = splits.byRiderId[riderId];
   if (!row) return [];
   return mode === "chip" ? row.chip : row.sector;
+}
+
+function getTodValues(splits: SplitData, riderId: string): (number | null)[] {
+  const row = splits.byRiderId[riderId];
+  if (!row || !("tod" in row)) return [];
+  return row.tod;
 }
 
 /** Segment stats over an array of values (excludes nulls). */
@@ -93,6 +99,343 @@ const CATEGORY_COLORS = [
   "#0ea5e9", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899",
   "#06b6d4", "#eab308", "#84cc16", "#a855f7", "#f43f5e",
 ];
+
+/** Gap to reference rider (or category leader) at each split. Chip only. */
+function GapToRefView({
+  splits,
+  grouped,
+  gapReference,
+  onGapReferenceChange,
+  ridersWithSplits,
+  hl,
+}: {
+  splits: SplitData;
+  grouped: Record<string, Rider[]>;
+  gapReference: string;
+  onGapReferenceChange: (v: string) => void;
+  ridersWithSplits: Rider[];
+  hl: string | null;
+}) {
+  const leaderByCategory = useMemo(() => {
+    const out: Record<string, Rider> = {};
+    Object.entries(grouped).forEach(([cat, riders]) => {
+      const withTime = riders.filter((r) => r.totalTime != null);
+      const leader = withTime.length ? _.minBy(withTime, (r) => r.totalTime!)! : riders[0];
+      if (leader) out[cat] = leader;
+    });
+    return out;
+  }, [grouped]);
+
+  const refRider = gapReference === "leader" ? null : ridersWithSplits.find((r) => r.id === gapReference);
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500 dark:text-slate-400">Gap = your chip time minus reference at that split. Positive = behind, negative = ahead. Uses chip (cumulative) time only.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">Reference:</label>
+        <select
+          value={gapReference}
+          onChange={(e) => onGapReferenceChange(e.target.value)}
+          className="bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 max-w-xs"
+        >
+          <option value="leader">Category leader</option>
+          {Object.entries(grouped).flatMap(([cat, riders]) =>
+            riders.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name} ({r.team}) — {cat}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+      <div className="space-y-6">
+        {Object.entries(grouped)
+        .filter(([cat]) => !refRider || refRider.categoryRaw === cat)
+        .map(([cat, riders]) => {
+          const ref = refRider && refRider.categoryRaw === cat ? refRider : leaderByCategory[cat];
+          if (!ref) return null;
+          const refChip = getSegmentValues(splits, ref.id, "chip");
+          return (
+            <div key={cat}>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
+                {cat} — gap to {ref.id === leaderByCategory[cat]?.id && !refRider ? "leader" : ref.name}
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
+                      <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-900">P</th>
+                      <th className="py-1 px-1 text-left sticky left-8 bg-slate-50 dark:bg-slate-900">Name</th>
+                      <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
+                      {splits.segmentLabels.map((l) => (
+                        <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {riders.map((r) => {
+                      const chip = getSegmentValues(splits, r.id, "chip");
+                      const isHl = hl != null && r.team === hl;
+                      return (
+                        <tr
+                          key={r.id}
+                          className={`border-b border-slate-100 dark:border-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-800/50 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""}`}
+                        >
+                          <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
+                          <td className={`py-1 px-1 font-medium truncate max-w-32 bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"}`}>{r.name}</td>
+                          <td className="py-1 px-1 truncate max-w-32 text-slate-500 dark:text-slate-400">{r.team || "—"}</td>
+                          {chip.map((v, i) => {
+                            const refV = refChip[i];
+                            const gap = v != null && refV != null ? v - refV : null;
+                            const cellClass =
+                              gap != null
+                                ? gap > 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : gap < 0
+                                    ? "text-emerald-600 dark:text-emerald-400"
+                                    : "text-slate-500"
+                                : "text-slate-400";
+                            return (
+                              <td key={i} className={`py-1 px-1 text-right font-mono ${cellClass}`}>
+                                {gap != null ? formatDelta(gap) : "—"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Rank at each split, passes within category, and cross-category overlap by clock time (TOD). */
+function PositionsPassingView({
+  splits,
+  grouped,
+  ridersWithSplits,
+  hl,
+}: {
+  splits: SplitData;
+  grouped: Record<string, Rider[]>;
+  ridersWithSplits: Rider[];
+  hl: string | null;
+}) {
+  const rankAtSplitByRider = useMemo(() => {
+    const byRider: Record<string, number[]> = {};
+    Object.entries(grouped).forEach(([_, riders]) => {
+      const n = splits.segmentLabels.length;
+      riders.forEach((r) => {
+        if (!byRider[r.id]) byRider[r.id] = [];
+      });
+      for (let s = 0; s < n; s++) {
+        const withVal = riders
+          .map((r) => ({ r, v: getSegmentValues(splits, r.id, "chip")[s] }))
+          .filter((x): x is { r: Rider; v: number } => x.v != null)
+          .sort((a, b) => a.v - b.v);
+        withVal.forEach((x, rank) => {
+          byRider[x.r.id][s] = rank + 1;
+        });
+      }
+    });
+    return byRider;
+  }, [splits, grouped]);
+
+  const passesBySegment = useMemo(() => {
+    const out: { segFrom: string; segTo: string; cat: string; passed: string; by: string }[] = [];
+    Object.entries(grouped).forEach(([cat, riders]) => {
+      const ranks = rankAtSplitByRider as Record<string, number[]>;
+      for (let s = 0; s < splits.segmentLabels.length - 1; s++) {
+        const fromRank = splits.segmentLabels[s];
+        const toRank = splits.segmentLabels[s + 1];
+        riders.forEach((a) => {
+          riders.forEach((b) => {
+            if (a.id === b.id) return;
+            const raPrev = ranks[a.id]?.[s];
+            const raNext = ranks[a.id]?.[s + 1];
+            const rbPrev = ranks[b.id]?.[s];
+            const rbNext = ranks[b.id]?.[s + 1];
+            if (raPrev == null || raNext == null || rbPrev == null || rbNext == null) return;
+            if (raPrev > rbPrev && raNext < rbNext) out.push({ segFrom: fromRank!, segTo: toRank!, cat, passed: b.name, by: a.name });
+          });
+        });
+      }
+    });
+    return out;
+  }, [splits, grouped, rankAtSplitByRider]);
+
+  const crossCategoryOverlap = useMemo(() => {
+    const hasTod = ridersWithSplits.some((r) =>
+      getTodValues(splits, r.id).some((t) => t != null)
+    );
+    if (!hasTod) return null;
+    return splits.segmentLabels.map((label, segIdx) => {
+      const byCat: Record<string, number[]> = {};
+      ridersWithSplits.forEach((r) => {
+        const tod = getTodValues(splits, r.id)[segIdx];
+        if (tod == null) return;
+        const c = r.categoryRaw;
+        if (!byCat[c]) byCat[c] = [];
+        byCat[c].push(tod);
+      });
+      const catRanges = Object.entries(byCat).map(([c, arr]) => ({ cat: c, min: Math.min(...arr), max: Math.max(...arr) }));
+      const overlappingCats = catRanges.length >= 2
+        ? [...new Set(catRanges.filter((a, i) => catRanges.some((b, j) => i !== j && a.min <= b.max && b.min <= a.max)).map((x) => x.cat))]
+        : [];
+      return { label, catRanges, overlapping: overlappingCats };
+    });
+  }, [splits, ridersWithSplits]);
+
+  const rankTableByRider = useMemo(() => {
+    const byRider: Record<string, (number | null)[]> = {};
+    Object.entries(grouped).forEach(([, riders]) => {
+      const n = splits.segmentLabels.length;
+      riders.forEach((r) => {
+        const sortedBySplit = _.range(n).map((s) =>
+          riders
+            .map((rr) => ({ rr, v: getSegmentValues(splits, rr.id, "chip")[s] }))
+            .filter((x): x is { rr: Rider; v: number } => x.v != null)
+            .sort((a, b) => a.v - b.v)
+        );
+        const ranks = sortedBySplit.map((order) => {
+          const idx = order.findIndex((x) => x.rr.id === r.id);
+          return idx === -1 ? null : idx + 1;
+        });
+        byRider[r.id] = ranks;
+      });
+    });
+    return byRider;
+  }, [splits, grouped]);
+
+  return (
+    <div className="space-y-6">
+      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time). Passes = who passed whom between consecutive splits. Overlap uses clock time (TOD) to find where categories were on course together.</p>
+
+      {Object.entries(grouped).map(([cat, riders]) => (
+        <div key={cat}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat} — rank at each split</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
+                  <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-900">P</th>
+                  <th className="py-1 px-1 text-left">Name</th>
+                  <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
+                  {splits.segmentLabels.map((l) => (
+                    <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {riders.map((r) => {
+                  const ranks = rankTableByRider[r.id] ?? [];
+                  const isHl = hl != null && r.team === hl;
+                  return (
+                    <tr key={r.id} className={`border-b border-slate-100 dark:border-slate-700 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""}`}>
+                      <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
+                      <td className={`py-1 px-1 font-medium bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : ""}`}>{r.name}</td>
+                      <td className="py-1 px-1 truncate max-w-32 text-slate-500 bg-inherit">{r.team || "—"}</td>
+                      {ranks.map((rank, i) => (
+                        <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      <div>
+        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Passes between consecutive splits (within category)</h2>
+        {passesBySegment.length === 0 ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">No passes detected between consecutive splits.</p>
+        ) : (
+          <ul className="text-xs space-y-1 list-disc list-inside text-slate-600 dark:text-slate-300">
+            {passesBySegment.slice(0, 80).map((p, i) => (
+              <li key={i}>{p.by} passed {p.passed} ({p.cat}) between {p.segFrom} and {p.segTo}</li>
+            ))}
+            {passesBySegment.length > 80 && <li className="text-slate-500">… and {passesBySegment.length - 80} more</li>}
+          </ul>
+        )}
+      </div>
+
+      {crossCategoryOverlap != null && (
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Where categories overlap (by clock time)</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Segments where different categories were on course at the same time—where cross-category passing can occur.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
+                  <th className="py-1 px-2 text-left">Segment</th>
+                  <th className="py-1 px-2 text-left">Categories present</th>
+                  <th className="py-1 px-2 text-left">Overlap (passing can occur)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {crossCategoryOverlap.map(({ label, catRanges, overlapping }) => (
+                  <tr key={label} className="border-b border-slate-100 dark:border-slate-700">
+                    <td className="py-1 px-2 font-medium text-slate-800 dark:text-slate-200">{label}</td>
+                    <td className="py-1 px-2 text-slate-600 dark:text-slate-400">{catRanges.map((c) => c.cat).join(", ")}</td>
+                    <td className="py-1 px-2 text-amber-600 dark:text-amber-400">{overlapping.length ? overlapping.join(", ") : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Correlation of each segment (sector time) with total time = how much that segment predicts finish. */
+function SegmentImpactView({ splits, ridersWithSplits }: { splits: SplitData; ridersWithSplits: Rider[] }) {
+  const correlations = useMemo(() => {
+    return splits.segmentLabels.map((label, segIdx) => {
+      const pairs = ridersWithSplits
+        .map((r) => {
+          const seg = getSegmentValues(splits, r.id, "sector")[segIdx];
+          const tot = r.totalTime;
+          return seg != null && tot != null ? { seg, tot } : null;
+        })
+        .filter((x): x is { seg: number; tot: number } => x != null);
+      if (pairs.length < 2) return { label, r: 0 };
+      const r = correlation(pairs.map((p) => p.seg), pairs.map((p) => p.tot));
+      return { label, r: r ?? 0 };
+    });
+  }, [splits, ridersWithSplits]);
+
+  const maxAbs = Math.max(1, ...correlations.map((c) => Math.abs(c.r)));
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500 dark:text-slate-400">Higher bar = that segment time predicts finish time more. Correlation is with total time (sector = segment time only).</p>
+      <div className="flex flex-col gap-2 max-w-2xl">
+        {correlations.map(({ label, r }) => (
+          <div key={label} className="flex items-center gap-2">
+            <span className="w-16 text-xs font-medium text-slate-700 dark:text-slate-200 shrink-0">{label}</span>
+            <div className="flex-1 h-6 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden flex">
+              <div
+                className="h-full bg-sky-500 dark:bg-sky-600 rounded"
+                style={{ width: `${(Math.abs(r) / maxAbs) * 100}%`, marginLeft: r >= 0 ? "0" : "auto" }}
+              />
+            </div>
+            <span className="w-12 text-right text-xs font-mono text-slate-600 dark:text-slate-400 shrink-0">r = {r.toFixed(2)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 interface CorrelationScatterProps {
   splits: SplitData;
@@ -335,6 +678,7 @@ function CorrelationScatter({ splits, grouped, ridersWithSplits, timingMode, hl 
 export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
   const [timingMode, setTimingMode] = useState<TimingMode>("sector");
   const [viewMode, setViewMode] = useState<ViewMode>("splits");
+  const [gapReference, setGapReference] = useState<string>("leader");
 
   const ridersWithSplits = useMemo(() => {
     if (!splits) return [];
@@ -395,6 +739,9 @@ export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
     { id: "segment-stats", label: "Segment stats" },
     { id: "distribution", label: "Distribution" },
     { id: "vs-average", label: "Vs average" },
+    { id: "gap", label: "Gap to ref" },
+    { id: "positions", label: "Positions & passing" },
+    { id: "segment-impact", label: "Segment impact" },
     { id: "correlation", label: "Correlation" },
   ];
 
@@ -408,6 +755,9 @@ export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
     "segment-stats": "Min, max, mean, median, and standard deviation for each segment across all filtered riders.",
     distribution: "Histogram of times per segment: how many riders fall in each time bucket. Shows spread and pacing patterns.",
     "vs-average": "Each cell = rider’s time minus their category average. Green = faster than category avg, red = slower. With Sector you see segment-by-segment; with Chip you see cumulative position at each mat.",
+    gap: "Gap to a reference rider (or category leader) at each split. Uses chip time only. Positive = behind, negative = ahead. Pick a reference to see who was gaining or losing.",
+    positions: "Rank at each split (by chip time). See where passing happened within a category, and where categories overlap by clock time (TOD)—where cross-category passing can occur.",
+    "segment-impact": "How much each segment predicts finish time: correlation of segment time with total time. Higher bar = that part of the course mattered more for the final result.",
     correlation: "Scatter plot: each point is a rider; X and Y are two splits (or total). Trend line and r show how related they are.",
   };
 
@@ -639,6 +989,33 @@ export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
             );
           })}
         </div>
+      )}
+
+      {viewMode === "gap" && (
+        <GapToRefView
+          splits={splits}
+          grouped={grouped}
+          gapReference={gapReference}
+          onGapReferenceChange={setGapReference}
+          ridersWithSplits={ridersWithSplits}
+          hl={hl}
+        />
+      )}
+
+      {viewMode === "positions" && (
+        <PositionsPassingView
+          splits={splits}
+          grouped={grouped}
+          ridersWithSplits={ridersWithSplits}
+          hl={hl}
+        />
+      )}
+
+      {viewMode === "segment-impact" && (
+        <SegmentImpactView
+          splits={splits}
+          ridersWithSplits={ridersWithSplits}
+        />
       )}
 
       {viewMode === "correlation" && (

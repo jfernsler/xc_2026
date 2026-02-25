@@ -105,10 +105,11 @@ export interface MapData {
   courses: MapCourse[];
 }
 
-/** Per-rider split times: sector (segment time) or chip (cumulative at split). */
+/** Per-rider split times: sector (segment time), chip (cumulative at split), tod (time-of-day seconds for overlap). */
 export interface RiderSplits {
   sector: (number | null)[];
   chip: (number | null)[];
+  tod: (number | null)[];
 }
 
 /** Parsed split timing for a race. segmentLabels e.g. ["L1-S1","L1-S2",...]; byRiderId key = Rider.id. */
