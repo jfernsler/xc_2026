@@ -4,7 +4,7 @@ import type { Rider, SplitData } from "../types";
 import { formatTime, formatDelta } from "../utils/time";
 
 type TimingMode = "chip" | "sector";
-type ViewMode = "splits" | "segment-stats" | "distribution" | "vs-average" | "correlation" | "gap" | "positions" | "segment-impact";
+type ViewMode = "splits" | "segment-stats" | "distribution" | "vs-average" | "gap" | "positions" | "fade";
 
 interface SplitsTabProps {
   raceName: string;
@@ -58,48 +58,6 @@ function histogram(values: (number | null)[], numBuckets = 12): { min: number; m
   });
   return { min, max, buckets, step };
 }
-
-/** Pearson correlation. */
-function correlation(x: number[], y: number[]): number | null {
-  if (x.length !== y.length || x.length < 2) return null;
-  const n = x.length;
-  const sumX = x.reduce((a, b) => a + b, 0);
-  const sumY = y.reduce((a, b) => a + b, 0);
-  const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i]!, 0);
-  const sumX2 = x.reduce((a, b) => a + b * b, 0);
-  const sumY2 = y.reduce((a, b) => a + b * b, 0);
-  const num = n * sumXY - sumX * sumY;
-  const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-  return den === 0 ? null : num / den;
-}
-
-/** Linear regression slope and intercept (y = a + b*x). */
-function linearRegression(x: number[], y: number[]): { a: number; b: number } | null {
-  if (x.length !== y.length || x.length < 2) return null;
-  const n = x.length;
-  const sumX = x.reduce((a, b) => a + b, 0);
-  const sumY = y.reduce((a, b) => a + b, 0);
-  const sumXY = x.reduce((acc, xi, i) => acc + xi * y[i]!, 0);
-  const sumX2 = x.reduce((a, b) => a + b * b, 0);
-  const b = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-  const a = (sumY - b * sumX) / n;
-  return { a, b };
-}
-
-function correlationInterpretation(r: number): string {
-  const abs = Math.abs(r);
-  const dir = r > 0 ? "Positive: faster on one tends to mean faster on the other." : "Negative: faster on one tends to mean slower on the other.";
-  if (abs >= 0.7) return `Strong (r = ${r.toFixed(2)}). ${dir}`;
-  if (abs >= 0.4) return `Moderate (r = ${r.toFixed(2)}). ${dir}`;
-  if (abs >= 0.2) return `Weak (r = ${r.toFixed(2)}). Little linear relationship.`;
-  return `Very weak (r = ${r.toFixed(2)}). No clear relationship.`;
-}
-
-const TOTAL_LABEL = "Total time";
-const CATEGORY_COLORS = [
-  "#0ea5e9", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899",
-  "#06b6d4", "#eab308", "#84cc16", "#a855f7", "#f43f5e",
-];
 
 /** Gap to reference rider (or category leader) at each split. Chip only. */
 function GapToRefView({
@@ -514,280 +472,105 @@ function PositionsPassingView({
   );
 }
 
-/** Correlation of each segment (sector time) with total time = how much that segment predicts finish. */
-function SegmentImpactView({ splits, ridersWithSplits }: { splits: SplitData; ridersWithSplits: Rider[] }) {
-  const correlations = useMemo(() => {
-    return splits.segmentLabels.map((label, segIdx) => {
-      const pairs = ridersWithSplits
-        .map((r) => {
-          const seg = getSegmentValues(splits, r.id, "sector")[segIdx];
-          const tot = r.totalTime;
-          return seg != null && tot != null ? { seg, tot } : null;
-        })
-        .filter((x): x is { seg: number; tot: number } => x != null);
-      if (pairs.length < 2) return { label, r: 0 };
-      const r = correlation(pairs.map((p) => p.seg), pairs.map((p) => p.tot));
-      return { label, r: r ?? 0 };
-    });
-  }, [splits, ridersWithSplits]);
-
-  const maxAbs = Math.max(1, ...correlations.map((c) => Math.abs(c.r)));
-
-  return (
-    <div className="space-y-4">
-      <p className="text-xs text-slate-500 dark:text-slate-400">Higher bar = that segment time predicts finish time more. Correlation is with total time (sector = segment time only).</p>
-      <div className="flex flex-col gap-2 max-w-2xl">
-        {correlations.map(({ label, r }) => (
-          <div key={label} className="flex items-center gap-2">
-            <span className="w-16 text-xs font-medium text-slate-700 dark:text-slate-200 shrink-0">{label}</span>
-            <div className="flex-1 h-6 bg-slate-200 dark:bg-slate-700 rounded overflow-hidden flex">
-              <div
-                className="h-full bg-sky-500 dark:bg-sky-600 rounded"
-                style={{ width: `${(Math.abs(r) / maxAbs) * 100}%`, marginLeft: r >= 0 ? "0" : "auto" }}
-              />
-            </div>
-            <span className="w-12 text-right text-xs font-mono text-slate-600 dark:text-slate-400 shrink-0">r = {r.toFixed(2)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+/** Group segment labels by split number (S1, S2, ...) in lap order. E.g. S1 -> [L1-S1, L2-S1, L3-S1] segment indices. */
+function segmentsBySplitAcrossLaps(segmentLabels: string[]): { splitKey: string; labels: string[]; indices: number[] }[] {
+  const bySplit = new Map<string, { lap: number; label: string; idx: number }[]>();
+  segmentLabels.forEach((label, idx) => {
+    const m = label.match(/^L(\d+)-S(\d+)$/);
+    if (!m) return;
+    const lap = parseInt(m[1], 10);
+    const sNum = m[2];
+    if (!bySplit.has(sNum)) bySplit.set(sNum, []);
+    bySplit.get(sNum)!.push({ lap, label, idx });
+  });
+  return Array.from(bySplit.entries())
+    .map(([splitKey, arr]) => {
+      const sorted = [...arr].sort((a, b) => a.lap - b.lap);
+      return { splitKey: "S" + splitKey, labels: sorted.map((x) => x.label), indices: sorted.map((x) => x.idx) };
+    })
+    .sort((a, b) => a.splitKey.localeCompare(b.splitKey));
 }
 
-interface CorrelationScatterProps {
+/** Fade view: same segment across laps (L1-S1 vs L2-S1 vs L3-S1). Sector times + lap-to-lap deltas. */
+function FadeView({
+  splits,
+  grouped,
+  hl,
+}: {
   splits: SplitData;
   grouped: Record<string, Rider[]>;
   ridersWithSplits: Rider[];
-  timingMode: TimingMode;
   hl: string | null;
-}
-
-function CorrelationScatter({ splits, grouped, ridersWithSplits, timingMode, hl }: CorrelationScatterProps) {
-  const [catFilter, setCatFilter] = useState<string>("All");
-  const [xAxis, setXAxis] = useState<string>(splits.segmentLabels[0] ?? TOTAL_LABEL);
-  const [yAxis, setYAxis] = useState<string>(splits.segmentLabels[1] ?? TOTAL_LABEL);
-
-  const categories = useMemo(() => ["All", ...Object.keys(grouped)], [grouped]);
-
-  const points = useMemo(() => {
-    const riders = catFilter === "All" ? ridersWithSplits : grouped[catFilter] ?? [];
-    const xIdx = xAxis === TOTAL_LABEL ? -1 : splits.segmentLabels.indexOf(xAxis);
-    const yIdx = yAxis === TOTAL_LABEL ? -1 : splits.segmentLabels.indexOf(yAxis);
-    const out: { x: number; y: number; rider: Rider; category: string }[] = [];
-    riders.forEach((r) => {
-      const xVal = xIdx === -1 ? r.totalTime : getSegmentValues(splits, r.id, timingMode)[xIdx];
-      const yVal = yIdx === -1 ? r.totalTime : getSegmentValues(splits, r.id, timingMode)[yIdx];
-      if (xVal != null && yVal != null) out.push({ x: xVal, y: yVal, rider: r, category: r.categoryRaw });
-    });
-    return out;
-  }, [splits, grouped, ridersWithSplits, catFilter, xAxis, yAxis, timingMode]);
-
-  const { xMin, xMax, yMin, yMax, r, trendLine } = useMemo(() => {
-    if (points.length < 2) return { xMin: 0, xMax: 1, yMin: 0, yMax: 1, r: null as number | null, trendLine: null as { x1: number; y1: number; x2: number; y2: number } | null };
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const xMin = Math.min(...xs);
-    const xMax = Math.max(...xs);
-    const yMin = Math.min(...ys);
-    const yMax = Math.max(...ys);
-    const padding = 0.04;
-    const xRange = (xMax - xMin) || 1;
-    const yRange = (yMax - yMin) || 1;
-    const rVal = correlation(xs, ys);
-    const lr = linearRegression(xs, ys);
-    let line: { x1: number; y1: number; x2: number; y2: number } | null = null;
-    if (lr) {
-      const x1 = xMin - xRange * padding;
-      const x2 = xMax + xRange * padding;
-      line = { x1, y1: lr.a + lr.b * x1, x2, y2: lr.a + lr.b * x2 };
-    }
-    return {
-      xMin: xMin - xRange * padding,
-      xMax: xMax + xRange * padding,
-      yMin: yMin - yRange * padding,
-      yMax: yMax + yRange * padding,
-      r: rVal,
-      trendLine: line,
-    };
-  }, [points]);
-
-  const width = 640;
-  const height = 480;
-  const pad = { left: 56, right: 24, top: 32, bottom: 52 };
-  const plotW = width - pad.left - pad.right;
-  const plotH = height - pad.top - pad.bottom;
-
-  const toX = (v: number) => pad.left + ((v - xMin) / (xMax - xMin || 1)) * plotW;
-  const toY = (v: number) => pad.top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
-
-  const xLabel = xAxis === TOTAL_LABEL ? "Total time" : `Segment: ${xAxis}`;
-  const yLabel = yAxis === TOTAL_LABEL ? "Total time" : `Segment: ${yAxis}`;
-  const axisOptions = [TOTAL_LABEL, ...splits.segmentLabels];
-
-  const categoryColorIndex = useMemo(() => {
-    const idx: Record<string, number> = {};
-    Object.keys(grouped).forEach((cat, i) => { idx[cat] = i % CATEGORY_COLORS.length; });
-    return idx;
-  }, [grouped]);
-
-  const numTicks = 5;
-  const xTicks = useMemo(() => {
-    const step = (xMax - xMin) / (numTicks - 1);
-    return Array.from({ length: numTicks }, (_, i) => xMin + i * step);
-  }, [xMin, xMax]);
-  const yTicks = useMemo(() => {
-    const step = (yMax - yMin) / (numTicks - 1);
-    return Array.from({ length: numTicks }, (_, i) => yMin + i * step);
-  }, [yMin, yMax]);
+}) {
+  const segmentGroups = useMemo(() => segmentsBySplitAcrossLaps(splits.segmentLabels), [splits.segmentLabels]);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-600 p-3">
-        <p className="text-sm text-slate-700 dark:text-slate-200">
-          <strong>What this shows:</strong> Each point is one rider. The horizontal axis is their time for the chosen X split (or total time); the vertical axis is the Y split. If the cloud follows a line, that split pair is correlated—e.g. riders who are fast in L1-S1 tend to be fast in L2-S1 too. The trend line and <em>r</em> summarize strength and direction.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4">
-        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-          Category
-          <select
-            value={catFilter}
-            onChange={(e) => setCatFilter(e.target.value)}
-            className="ml-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-slate-900 dark:text-slate-100 text-xs"
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-          X axis (horizontal)
-          <select
-            value={xAxis}
-            onChange={(e) => setXAxis(e.target.value)}
-            className="ml-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-slate-900 dark:text-slate-100 text-xs"
-          >
-            {axisOptions.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-          Y axis (vertical)
-          <select
-            value={yAxis}
-            onChange={(e) => setYAxis(e.target.value)}
-            className="ml-1.5 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 text-slate-900 dark:text-slate-100 text-xs"
-          >
-            {axisOptions.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      {r != null && (
-        <div className={`rounded-lg px-3 py-2 text-sm font-medium ${
-          Math.abs(r) >= 0.7 ? "bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700" :
-          Math.abs(r) >= 0.4 ? "bg-sky-100 dark:bg-sky-900/40 text-sky-800 dark:text-sky-200 border border-sky-200 dark:border-sky-700" :
-          "bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600"
-        }`}>
-          {correlationInterpretation(r)}
+    <div className="space-y-6">
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Same stretch of course across laps (e.g. S1 = L1-S1, L2-S1, L3-S1). Sector times and Δ = lap-to-lap change. Red Δ = slower (fade), green Δ = faster.
+      </p>
+      {segmentGroups.map(({ splitKey, labels, indices }) => (
+        <div key={splitKey}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
+            Segment {splitKey} across laps ({labels.join(" → ")})
+          </h2>
+          {Object.entries(grouped).map(([cat, riders]) => (
+            <div key={cat} className="mb-4">
+              <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">{cat}</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
+                      <th className="py-1 px-1 text-left">P</th>
+                      <th className="py-1 px-1 text-left">Name</th>
+                      <th className="py-1 px-1 text-left max-w-28 truncate">Team</th>
+                      {labels.map((l) => (
+                        <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
+                      ))}
+                      {indices.length >= 2 && <th className="py-1 px-1 text-right">Δ 1→2</th>}
+                      {indices.length >= 3 && <th className="py-1 px-1 text-right">Δ 2→3</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {riders.map((r) => {
+                      const sector = getSegmentValues(splits, r.id, "sector");
+                      const times = indices.map((i) => sector[i] ?? null);
+                      const d12 = times[0] != null && times[1] != null ? times[1] - times[0] : null;
+                      const d23 = times[1] != null && times[2] != null ? times[2] - times[1] : null;
+                      const isHl = hl != null && r.team === hl;
+                      return (
+                        <tr
+                          key={r.id}
+                          className={`border-b border-slate-100 dark:border-slate-700 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""}`}
+                        >
+                          <td className="py-1 px-1 font-mono text-slate-700 dark:text-slate-300">{r.place}</td>
+                          <td className={`py-1 px-1 font-medium truncate max-w-28 ${isHl ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"}`}>{r.name}</td>
+                          <td className="py-1 px-1 truncate max-w-28 text-slate-500 dark:text-slate-400">{r.team || "—"}</td>
+                          {times.map((t, i) => (
+                            <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">
+                              {t != null ? formatTime(t) : "—"}
+                            </td>
+                          ))}
+                          {indices.length >= 2 && (
+                            <td className={`py-1 px-1 text-right font-mono ${d12 != null ? (d12 > 0 ? "text-red-600 dark:text-red-400" : d12 < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500") : "text-slate-400"}`}>
+                              {d12 != null ? formatDelta(d12) : "—"}
+                            </td>
+                          )}
+                          {indices.length >= 3 && (
+                            <td className={`py-1 px-1 text-right font-mono ${d23 != null ? (d23 > 0 ? "text-red-600 dark:text-red-400" : d23 < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500") : "text-slate-400"}`}>
+                              {d23 != null ? formatDelta(d23) : "—"}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
         </div>
-      )}
-
-      <div className="overflow-x-auto rounded-lg border-2 border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-sm">
-        <svg width={width} height={height} className="min-w-0">
-          <defs>
-            <linearGradient id="corrPlotBg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#f1f5f9" stopOpacity={0.7} />
-              <stop offset="100%" stopColor="#e2e8f0" stopOpacity={0.4} />
-            </linearGradient>
-          </defs>
-          <rect x={pad.left} y={pad.top} width={plotW} height={plotH} fill="url(#corrPlotBg)" />
-          {/* Grid */}
-          {xTicks.slice(1, -1).map((v, i) => (
-            <line key={`v${i}`} x1={toX(v)} y1={pad.top} x2={toX(v)} y2={pad.top + plotH} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="2,2" className="dark:stroke-slate-600" />
-          ))}
-          {yTicks.slice(1, -1).map((v, i) => (
-            <line key={`h${i}`} x1={pad.left} y1={toY(v)} x2={pad.left + plotW} y2={toY(v)} stroke="#cbd5e1" strokeWidth={1} strokeDasharray="2,2" className="dark:stroke-slate-600" />
-          ))}
-          {/* Trend line */}
-          {trendLine && (
-            <line
-              x1={toX(trendLine.x1)}
-              y1={toY(trendLine.y1)}
-              x2={toX(trendLine.x2)}
-              y2={toY(trendLine.y2)}
-              stroke="#f59e0b"
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              className="dark:stroke-amber-400"
-              opacity={0.9}
-            />
-          )}
-          {/* Axes */}
-          <line x1={pad.left} y1={pad.top} x2={pad.left} y2={pad.top + plotH} stroke="#64748b" strokeWidth={1.5} className="dark:stroke-slate-500" />
-          <line x1={pad.left} y1={pad.top + plotH} x2={pad.left + plotW} y2={pad.top + plotH} stroke="#64748b" strokeWidth={1.5} className="dark:stroke-slate-500" />
-          {/* Axis labels and ticks */}
-          {xTicks.map((v) => (
-            <g key={v}>
-              <line x1={toX(v)} y1={pad.top + plotH} x2={toX(v)} y2={pad.top + plotH + 6} stroke="#64748b" className="dark:stroke-slate-500" />
-              <text x={toX(v)} y={pad.top + plotH + 20} textAnchor="middle" className="text-[11px] fill-slate-600 dark:fill-slate-400 font-medium">{formatTime(v)}</text>
-            </g>
-          ))}
-          {yTicks.map((v) => (
-            <g key={v}>
-              <line x1={pad.left - 6} y1={toY(v)} x2={pad.left} y2={toY(v)} stroke="#64748b" className="dark:stroke-slate-500" />
-              <text x={pad.left - 8} y={toY(v) + 4} textAnchor="end" className="text-[11px] fill-slate-600 dark:fill-slate-400 font-medium">{formatTime(v)}</text>
-            </g>
-          ))}
-          <text x={pad.left + plotW / 2} y={height - 12} textAnchor="middle" className="text-xs font-semibold fill-slate-700 dark:fill-slate-300">{xLabel}</text>
-          <text x={14} y={pad.top + plotH / 2} textAnchor="middle" className="text-xs font-semibold fill-slate-700 dark:fill-slate-300" transform={`rotate(-90, 14, ${pad.top + plotH / 2})`}>{yLabel}</text>
-          {/* Points */}
-          {points.map((p) => {
-            const isHl = hl != null && p.rider.team === hl;
-            const color = catFilter === "All" ? CATEGORY_COLORS[categoryColorIndex[p.category] ?? 0] : (isHl ? "#0ea5e9" : "#64748b");
-            return (
-              <circle
-                key={p.rider.id}
-                cx={toX(p.x)}
-                cy={toY(p.y)}
-                r={isHl ? 6 : 4}
-                fill={color}
-                stroke={isHl ? "#0369a1" : "rgba(255,255,255,0.8)"}
-                strokeWidth={isHl ? 2.5 : 1}
-                className="dark:stroke-slate-800"
-              >
-                <title>{p.rider.name} · {p.rider.team} · P{p.rider.place} · {xLabel}: {formatTime(p.x)} · {yLabel}: {formatTime(p.y)}</title>
-              </circle>
-            );
-          })}
-        </svg>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4 text-xs">
-        {catFilter === "All" && (
-          <div className="flex flex-wrap gap-3">
-            <span className="text-slate-500 dark:text-slate-400 font-medium">Categories:</span>
-            {Object.keys(grouped).map((cat, i) => (
-              <span key={cat} className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }} />
-                <span className="text-slate-700 dark:text-slate-300">{cat}</span>
-              </span>
-            ))}
-          </div>
-        )}
-        {hl && (
-          <span className="text-sky-600 dark:text-sky-400 font-medium">
-            Highlighted: {hl} (larger points)
-          </span>
-        )}
-        <span className="text-slate-500 dark:text-slate-400">
-          {points.length} riders · Hover a point for name, team, place, and times
-        </span>
-      </div>
+      ))}
     </div>
   );
 }
@@ -858,8 +641,7 @@ export function SplitsTab({ raceName, filtered, rawData, splits, hl }: SplitsTab
     { id: "vs-average", label: "Vs average" },
     { id: "gap", label: "Gap to ref" },
     { id: "positions", label: "Positions & passing" },
-    { id: "segment-impact", label: "Segment impact" },
-    { id: "correlation", label: "Correlation" },
+    { id: "fade", label: "Fade" },
   ];
 
   const timingExplanation =
@@ -874,8 +656,7 @@ export function SplitsTab({ raceName, filtered, rawData, splits, hl }: SplitsTab
     "vs-average": "Each cell = rider’s time minus their category average. Green = faster than category avg, red = slower. With Sector you see segment-by-segment; with Chip you see cumulative position at each mat.",
     gap: "Gap to a reference rider (or category leader) at each split. Uses chip time only. Positive = behind, negative = ahead. Pick a reference to see who was gaining or losing.",
     positions: "Rank at each split (by chip time). See where passing happened within a category, and where categories overlap by clock time (TOD)—where cross-category passing can occur.",
-    "segment-impact": "How much each segment predicts finish time: correlation of segment time with total time. Higher bar = that part of the course mattered more for the final result.",
-    correlation: "Scatter plot: each point is a rider; X and Y are two splits (or total). Trend line and r show how related they are.",
+    fade: "Same segment across laps (e.g. L1-S1 vs L2-S1 vs L3-S1). Sector times and lap-to-lap deltas show where riders faded (slower) or held pace.",
   };
 
   return (
@@ -1128,21 +909,8 @@ export function SplitsTab({ raceName, filtered, rawData, splits, hl }: SplitsTab
         />
       )}
 
-      {viewMode === "segment-impact" && (
-        <SegmentImpactView
-          splits={splits}
-          ridersWithSplits={ridersWithSplits}
-        />
-      )}
-
-      {viewMode === "correlation" && (
-        <CorrelationScatter
-          splits={splits}
-          grouped={grouped}
-          ridersWithSplits={ridersWithSplits}
-          timingMode={timingMode}
-          hl={hl}
-        />
+      {viewMode === "fade" && (
+        <FadeView splits={splits} grouped={grouped} ridersWithSplits={ridersWithSplits} hl={hl} />
       )}
     </div>
   );
