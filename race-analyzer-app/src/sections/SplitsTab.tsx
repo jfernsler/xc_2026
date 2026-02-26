@@ -354,9 +354,18 @@ function PositionsPassingView({
     return byRider;
   }, [splits, grouped]);
 
-  const displayedPasses = selectedRiderId
-    ? passesBySegment.filter((p) => p.byId === selectedRiderId || p.passedId === selectedRiderId)
-    : passesBySegment;
+  const displayedPasses = useMemo(() => {
+    const list = selectedRiderId
+      ? passesBySegment.filter((p) => p.byId === selectedRiderId || p.passedId === selectedRiderId)
+      : passesBySegment;
+    const labels = splits.segmentLabels;
+    return [...list].sort((a, b) => {
+      const toA = labels.indexOf(a.segTo);
+      const toB = labels.indexOf(b.segTo);
+      if (toA !== toB) return toA - toB;
+      return labels.indexOf(a.segFrom) - labels.indexOf(b.segFrom);
+    });
+  }, [selectedRiderId, passesBySegment, splits.segmentLabels]);
   const selectedRider = selectedRiderId ? allRidersWithSplits.find((r) => r.id === selectedRiderId) : null;
 
   function PassBullet({ p }: { p: typeof passesBySegment[0] }) {
@@ -386,7 +395,7 @@ function PositionsPassingView({
       {Object.entries(grouped).map(([cat, riders]) => {
         const riderPassesInCat = selectedRiderId
           ? displayedPasses.filter((p) => p.cat === cat)
-          : [];
+          : []; // already sorted chronologically via displayedPasses
         const selectedInThisCat = selectedRiderId && riders.some((r) => r.id === selectedRiderId);
         return (
           <div key={cat}>
@@ -448,25 +457,22 @@ function PositionsPassingView({
         );
       })}
 
-      <div>
-        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Passes between consecutive splits (within category)</h2>
-        {selectedRider && (
-          <p className="text-xs text-slate-600 dark:text-slate-300 mb-1">
-            Showing passes for <strong>{selectedRider.name}</strong> ({selectedRider.team})
-            <button type="button" onClick={() => setSelectedRiderId(null)} className="ml-2 text-sky-600 dark:text-sky-400 hover:underline">Show all</button>
-          </p>
-        )}
-        {displayedPasses.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">{selectedRiderId ? "No passes for this rider." : "No passes detected between consecutive splits."}</p>
-        ) : (
-          <ul className="text-xs space-y-1 list-none">
-            {displayedPasses.slice(0, 80).map((p, i) => (
-              <PassBullet key={i} p={p} />
-            ))}
-            {displayedPasses.length > 80 && <li className="text-slate-500">… and {displayedPasses.length - 80} more</li>}
-          </ul>
-        )}
-      </div>
+{!selectedRiderId && (
+        <div>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Passes between consecutive splits (within category)</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Chronological by segment. Click a rider in the table above to see their pass history only.</p>
+          {displayedPasses.length === 0 ? (
+            <p className="text-xs text-slate-500 dark:text-slate-400">No passes detected.</p>
+          ) : (
+            <ul className="text-xs space-y-1 list-none">
+              {displayedPasses.slice(0, 80).map((p, i) => (
+                <li key={i} className="text-slate-600 dark:text-slate-300">{p.by} passed {p.passed} ({p.cat}) between {p.segFrom} and {p.segTo}</li>
+              ))}
+              {displayedPasses.length > 80 && <li className="text-slate-500">… and {displayedPasses.length - 80} more</li>}
+            </ul>
+          )}
+        </div>
+      )}
 
       {crossCategoryOverlap != null && (
         <div>
