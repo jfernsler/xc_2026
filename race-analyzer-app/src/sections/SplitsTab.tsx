@@ -491,7 +491,7 @@ function segmentsBySplitAcrossLaps(segmentLabels: string[]): { splitKey: string;
     .sort((a, b) => a.splitKey.localeCompare(b.splitKey));
 }
 
-/** Fade view: same segment across laps (L1-S1 vs L2-S1 vs L3-S1). Sector times + lap-to-lap deltas. */
+/** Fade view: all segments in one table — L1S1 vs L2S1, L1S2 vs L2S2, … and L2→L3 per segment where 3 laps exist. */
 function FadeView({
   splits,
   grouped,
@@ -507,68 +507,76 @@ function FadeView({
   return (
     <div className="space-y-6">
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Same stretch of course across laps (e.g. S1 = L1-S1, L2-S1, L3-S1). Sector times and Δ = lap-to-lap change. Red Δ = slower (fade), green Δ = faster.
+        Same stretch across laps for every segment: L1S1 vs L2S1, L1S2 vs L2S2, etc. Δ = lap-to-lap change (red = slower/fade, green = faster). For 3-lap categories, L2→L3 per segment is included.
       </p>
-      {segmentGroups.map(({ splitKey, labels, indices }) => (
-        <div key={splitKey}>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
-            Segment {splitKey} across laps ({labels.join(" → ")})
-          </h2>
-          {Object.entries(grouped).map(([cat, riders]) => (
-            <div key={cat} className="mb-4">
-              <h3 className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">{cat}</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
-                      <th className="py-1 px-1 text-left">P</th>
-                      <th className="py-1 px-1 text-left">Name</th>
-                      <th className="py-1 px-1 text-left max-w-28 truncate">Team</th>
-                      {labels.map((l) => (
-                        <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
-                      ))}
-                      {indices.length >= 2 && <th className="py-1 px-1 text-right">Δ 1→2</th>}
-                      {indices.length >= 3 && <th className="py-1 px-1 text-right">Δ 2→3</th>}
+      {Object.entries(grouped).map(([cat, riders]) => (
+        <div key={cat}>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat}</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-slate-500 dark:text-slate-400 border-b-2 border-slate-200 dark:border-slate-600">
+                  <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-800/80">P</th>
+                  <th className="py-1 px-1 text-left sticky left-6 max-w-28 truncate bg-slate-50 dark:bg-slate-800/80">Name</th>
+                  <th className="py-1 px-1 text-left max-w-24 truncate bg-slate-50 dark:bg-slate-800/80">Team</th>
+                  {segmentGroups.map(({ splitKey, labels, indices }) => (
+                    <th key={splitKey} className="py-1 px-1 text-right border-l border-slate-200 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-700/40 whitespace-nowrap">
+                      <span className="font-semibold text-slate-600 dark:text-slate-300">{splitKey}</span>
+                      <div className="text-[10px] font-normal mt-0.5 flex flex-wrap gap-x-0.5 justify-end">
+                        {labels.map((l) => (
+                          <span key={l} className="font-mono">{l}</span>
+                        ))}
+                        {indices.length >= 2 && <span className="text-amber-600 dark:text-amber-400">Δ1→2</span>}
+                        {indices.length >= 3 && <span className="text-amber-600 dark:text-amber-400">Δ2→3</span>}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {riders.map((r) => {
+                  const sector = getSegmentValues(splits, r.id, "sector");
+                  const isHl = hl != null && r.team === hl;
+                  return (
+                    <tr
+                      key={r.id}
+                      className={`border-b border-slate-100 dark:border-slate-700 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""}`}
+                    >
+                      <td className="py-1 px-1 font-mono text-slate-700 dark:text-slate-300 sticky left-0 bg-inherit">{r.place}</td>
+                      <td className={`py-1 px-1 font-medium truncate max-w-28 sticky left-6 bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"}`}>{r.name}</td>
+                      <td className="py-1 px-1 truncate max-w-24 text-slate-500 dark:text-slate-400">{r.team || "—"}</td>
+                      {segmentGroups.map(({ splitKey, indices }) => {
+                        const times = indices.map((i) => sector[i] ?? null);
+                        const d12 = times[0] != null && times[1] != null ? times[1] - times[0] : null;
+                        const d23 = indices.length >= 3 && times[1] != null && times[2] != null ? times[2] - times[1] : null;
+                        return (
+                          <td key={splitKey} className="border-l border-slate-100 dark:border-slate-700 align-top">
+                            <div className="flex gap-0.5 justify-end items-baseline flex-wrap pr-0.5">
+                              {times.map((t, i) => (
+                                <span key={i} className="font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                                  {t != null ? formatTime(t) : "—"}
+                                </span>
+                              ))}
+                              {indices.length >= 2 && (
+                                <span className={`font-mono whitespace-nowrap ${d12 != null ? (d12 > 0 ? "text-red-600 dark:text-red-400" : d12 < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500") : "text-slate-400"}`}>
+                                  {d12 != null ? formatDelta(d12) : "—"}
+                                </span>
+                              )}
+                              {indices.length >= 3 && (
+                                <span className={`font-mono whitespace-nowrap ${d23 != null ? (d23 > 0 ? "text-red-600 dark:text-red-400" : d23 < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500") : "text-slate-400"}`}>
+                                  {d23 != null ? formatDelta(d23) : "—"}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {riders.map((r) => {
-                      const sector = getSegmentValues(splits, r.id, "sector");
-                      const times = indices.map((i) => sector[i] ?? null);
-                      const d12 = times[0] != null && times[1] != null ? times[1] - times[0] : null;
-                      const d23 = times[1] != null && times[2] != null ? times[2] - times[1] : null;
-                      const isHl = hl != null && r.team === hl;
-                      return (
-                        <tr
-                          key={r.id}
-                          className={`border-b border-slate-100 dark:border-slate-700 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""}`}
-                        >
-                          <td className="py-1 px-1 font-mono text-slate-700 dark:text-slate-300">{r.place}</td>
-                          <td className={`py-1 px-1 font-medium truncate max-w-28 ${isHl ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"}`}>{r.name}</td>
-                          <td className="py-1 px-1 truncate max-w-28 text-slate-500 dark:text-slate-400">{r.team || "—"}</td>
-                          {times.map((t, i) => (
-                            <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">
-                              {t != null ? formatTime(t) : "—"}
-                            </td>
-                          ))}
-                          {indices.length >= 2 && (
-                            <td className={`py-1 px-1 text-right font-mono ${d12 != null ? (d12 > 0 ? "text-red-600 dark:text-red-400" : d12 < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500") : "text-slate-400"}`}>
-                              {d12 != null ? formatDelta(d12) : "—"}
-                            </td>
-                          )}
-                          {indices.length >= 3 && (
-                            <td className={`py-1 px-1 text-right font-mono ${d23 != null ? (d23 > 0 ? "text-red-600 dark:text-red-400" : d23 < 0 ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500") : "text-slate-400"}`}>
-                              {d23 != null ? formatDelta(d23) : "—"}
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       ))}
     </div>
@@ -656,7 +664,7 @@ export function SplitsTab({ raceName, filtered, rawData, splits, hl }: SplitsTab
     "vs-average": "Each cell = rider’s time minus their category average. Green = faster than category avg, red = slower. With Sector you see segment-by-segment; with Chip you see cumulative position at each mat.",
     gap: "Gap to a reference rider (or category leader) at each split. Uses chip time only. Positive = behind, negative = ahead. Pick a reference to see who was gaining or losing.",
     positions: "Rank at each split (by chip time). See where passing happened within a category, and where categories overlap by clock time (TOD)—where cross-category passing can occur.",
-    fade: "Same segment across laps (e.g. L1-S1 vs L2-S1 vs L3-S1). Sector times and lap-to-lap deltas show where riders faded (slower) or held pace.",
+    fade: "All segments in one table: L1S1 vs L2S1, L1S2 vs L2S2, etc. Sector times and Δ per lap pair. For 3-lap categories, L2→L3 per segment included. Red Δ = fade (slower), green = faster.",
   };
 
   return (
