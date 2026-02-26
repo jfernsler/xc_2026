@@ -346,50 +346,94 @@ function PositionsPassingView({
     : passesBySegment;
   const selectedRider = selectedRiderId ? allRidersWithSplits.find((r) => r.id === selectedRiderId) : null;
 
+  function PassBullet({ p }: { p: typeof passesBySegment[0] }) {
+    const isPassMade = selectedRiderId === p.byId;
+    const isPassReceived = selectedRiderId === p.passedId;
+    const showTriangle = selectedRiderId != null && (isPassMade || isPassReceived);
+    return (
+      <li className="flex items-baseline gap-1.5 text-slate-600 dark:text-slate-300">
+        {showTriangle ? (
+          <span className="shrink-0" title={isPassMade ? "Rider made pass" : "Rider was passed"}>
+            {isPassMade ? (
+              <span className="text-emerald-600 dark:text-emerald-400" aria-hidden>▲</span>
+            ) : (
+              <span className="text-red-600 dark:text-red-400" aria-hidden>▼</span>
+            )}
+          </span>
+        ) : null}
+        <span>{p.by} passed {p.passed} ({p.cat}) between {p.segFrom} and {p.segTo}</span>
+      </li>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time). Click a rider to show only their passes. Overlap and pass list use full race data (not affected by filters).</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time). Click a rider to show only their passes. ▲ = rider made pass, ▼ = rider was passed. Overlap and pass list use full race data (not affected by filters).</p>
 
-      {Object.entries(grouped).map(([cat, riders]) => (
-        <div key={cat}>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat} — rank at each split (click name to isolate passes)</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
-                  <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-900">P</th>
-                  <th className="py-1 px-1 text-left">Name</th>
-                  <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
-                  {splits.segmentLabels.map((l) => (
-                    <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {riders.map((r) => {
-                  const ranks = rankTableByRider[r.id] ?? [];
-                  const isHl = hl != null && r.team === hl;
-                  const isSelected = selectedRiderId === r.id;
-                  return (
-                    <tr
-                      key={r.id}
-                      className={`border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-700/50 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""} ${isSelected ? "ring-1 ring-sky-500 dark:ring-sky-400 bg-sky-50 dark:bg-sky-900/30" : ""}`}
-                      onClick={() => setSelectedRiderId((prev) => (prev === r.id ? null : r.id))}
-                    >
-                      <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
-                      <td className={`py-1 px-1 font-medium bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : ""} ${isSelected ? "underline" : ""}`}>{r.name}</td>
-                      <td className="py-1 px-1 truncate max-w-32 text-slate-500 bg-inherit">{r.team || "—"}</td>
-                      {ranks.map((rank, i) => (
-                        <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {Object.entries(grouped).map(([cat, riders]) => {
+        const riderPassesInCat = selectedRiderId
+          ? displayedPasses.filter((p) => p.cat === cat)
+          : [];
+        const selectedInThisCat = selectedRiderId && riders.some((r) => r.id === selectedRiderId);
+        return (
+          <div key={cat}>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat} — rank at each split (click name to isolate passes)</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
+                    <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-900">P</th>
+                    <th className="py-1 px-1 text-left">Name</th>
+                    <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
+                    {splits.segmentLabels.map((l) => (
+                      <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {riders.map((r) => {
+                    const ranks = rankTableByRider[r.id] ?? [];
+                    const isHl = hl != null && r.team === hl;
+                    const isSelected = selectedRiderId === r.id;
+                    return (
+                      <tr
+                        key={r.id}
+                        className={`border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-700/50 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""} ${isSelected ? "ring-1 ring-sky-500 dark:ring-sky-400 bg-sky-50 dark:bg-sky-900/30" : ""}`}
+                        onClick={() => setSelectedRiderId((prev) => (prev === r.id ? null : r.id))}
+                      >
+                        <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
+                        <td className={`py-1 px-1 font-medium bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : ""} ${isSelected ? "underline" : ""}`}>{r.name}</td>
+                        <td className="py-1 px-1 truncate max-w-32 text-slate-500 bg-inherit">{r.team || "—"}</td>
+                        {ranks.map((rank, i) => (
+                          <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {selectedInThisCat && selectedRider && (
+              <div className="mt-2 pl-2 border-l-2 border-sky-300 dark:border-sky-600">
+                <p className="text-xs font-medium text-slate-700 dark:text-slate-200 mb-1">
+                  Pass history for <strong>{selectedRider.name}</strong> ({selectedRider.team})
+                  <button type="button" onClick={() => setSelectedRiderId(null)} className="ml-2 text-sky-600 dark:text-sky-400 hover:underline text-[11px]">Clear</button>
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">▲ made pass · ▼ was passed</p>
+                {riderPassesInCat.length === 0 ? (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">No passes in this category.</p>
+                ) : (
+                  <ul className="text-xs space-y-0.5 list-none">
+                    {riderPassesInCat.map((p, i) => (
+                      <PassBullet key={i} p={p} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div>
         <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Passes between consecutive splits (within category)</h2>
@@ -402,9 +446,9 @@ function PositionsPassingView({
         {displayedPasses.length === 0 ? (
           <p className="text-xs text-slate-500 dark:text-slate-400">{selectedRiderId ? "No passes for this rider." : "No passes detected between consecutive splits."}</p>
         ) : (
-          <ul className="text-xs space-y-1 list-disc list-inside text-slate-600 dark:text-slate-300">
+          <ul className="text-xs space-y-1 list-none">
             {displayedPasses.slice(0, 80).map((p, i) => (
-              <li key={i}>{p.by} passed {p.passed} ({p.cat}) between {p.segFrom} and {p.segTo}</li>
+              <PassBullet key={i} p={p} />
             ))}
             {displayedPasses.length > 80 && <li className="text-slate-500">… and {displayedPasses.length - 80} more</li>}
           </ul>
