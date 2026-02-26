@@ -808,6 +808,7 @@ export default function App() {
               <SplitsTab
                 raceName={raceOptions.find((r) => String(r.id) === selectedRaceId)?.name ?? ""}
                 filtered={filtered}
+                rawData={rawData}
                 splits={splitData}
                 hl={hl}
               />

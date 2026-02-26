@@ -9,6 +9,7 @@ type ViewMode = "splits" | "segment-stats" | "distribution" | "vs-average" | "co
 interface SplitsTabProps {
   raceName: string;
   filtered: Rider[];
+  rawData: Rider[];
   splits: SplitData | null;
   hl: string | null;
 }
@@ -215,21 +216,25 @@ function GapToRefView({
   );
 }
 
-/** Rank at each split, passes within category, and cross-category overlap by clock time (TOD). */
+/** Rank at each split, passes within category, and cross-category overlap by clock time (TOD). Uses allRidersWithSplits for overlap and pass list (not affected by category filter). */
 function PositionsPassingView({
   splits,
   grouped,
-  ridersWithSplits,
+  allRidersWithSplits,
   hl,
 }: {
   splits: SplitData;
   grouped: Record<string, Rider[]>;
-  ridersWithSplits: Rider[];
+  allRidersWithSplits: Rider[];
   hl: string | null;
 }) {
-  const rankAtSplitByRider = useMemo(() => {
+  const [selectedRiderId, setSelectedRiderId] = useState<string | null>(null);
+
+  const groupedAll = useMemo(() => _.groupBy(allRidersWithSplits, "categoryRaw"), [allRidersWithSplits]);
+
+  const rankAtSplitByRiderAll = useMemo(() => {
     const byRider: Record<string, number[]> = {};
-    Object.entries(grouped).forEach(([_, riders]) => {
+    Object.entries(groupedAll).forEach(([_, riders]) => {
       const n = splits.segmentLabels.length;
       riders.forEach((r) => {
         if (!byRider[r.id]) byRider[r.id] = [];
@@ -245,12 +250,12 @@ function PositionsPassingView({
       }
     });
     return byRider;
-  }, [splits, grouped]);
+  }, [splits, groupedAll]);
 
   const passesBySegment = useMemo(() => {
-    const out: { segFrom: string; segTo: string; cat: string; passed: string; by: string }[] = [];
-    Object.entries(grouped).forEach(([cat, riders]) => {
-      const ranks = rankAtSplitByRider as Record<string, number[]>;
+    const out: { segFrom: string; segTo: string; cat: string; passed: string; by: string; passedId: string; byId: string }[] = [];
+    Object.entries(groupedAll).forEach(([cat, riders]) => {
+      const ranks = rankAtSplitByRiderAll;
       for (let s = 0; s < splits.segmentLabels.length - 1; s++) {
         const fromRank = splits.segmentLabels[s];
         const toRank = splits.segmentLabels[s + 1];
@@ -262,22 +267,22 @@ function PositionsPassingView({
             const rbPrev = ranks[b.id]?.[s];
             const rbNext = ranks[b.id]?.[s + 1];
             if (raPrev == null || raNext == null || rbPrev == null || rbNext == null) return;
-            if (raPrev > rbPrev && raNext < rbNext) out.push({ segFrom: fromRank!, segTo: toRank!, cat, passed: b.name, by: a.name });
+            if (raPrev > rbPrev && raNext < rbNext) out.push({ segFrom: fromRank!, segTo: toRank!, cat, passed: b.name, by: a.name, passedId: b.id, byId: a.id });
           });
         });
       }
     });
     return out;
-  }, [splits, grouped, rankAtSplitByRider]);
+  }, [splits, groupedAll, rankAtSplitByRiderAll]);
 
   const crossCategoryOverlap = useMemo(() => {
-    const hasTod = ridersWithSplits.some((r) =>
+    const hasTod = allRidersWithSplits.some((r) =>
       getTodValues(splits, r.id).some((t) => t != null)
     );
     if (!hasTod) return null;
     return splits.segmentLabels.map((label, segIdx) => {
       const byCat: Record<string, number[]> = {};
-      ridersWithSplits.forEach((r) => {
+      allRidersWithSplits.forEach((r) => {
         const tod = getTodValues(splits, r.id)[segIdx];
         if (tod == null) return;
         const c = r.categoryRaw;
@@ -290,7 +295,7 @@ function PositionsPassingView({
         : [];
       return { label, catRanges, overlapping: overlappingCats };
     });
-  }, [splits, ridersWithSplits]);
+  }, [splits, allRidersWithSplits]);
 
   const rankTableByRider = useMemo(() => {
     const byRider: Record<string, (number | null)[]> = {};
@@ -313,13 +318,18 @@ function PositionsPassingView({
     return byRider;
   }, [splits, grouped]);
 
+  const displayedPasses = selectedRiderId
+    ? passesBySegment.filter((p) => p.byId === selectedRiderId || p.passedId === selectedRiderId)
+    : passesBySegment;
+  const selectedRider = selectedRiderId ? allRidersWithSplits.find((r) => r.id === selectedRiderId) : null;
+
   return (
     <div className="space-y-6">
-      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time). Passes = who passed whom between consecutive splits. Overlap uses clock time (TOD) to find where categories were on course together.</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time). Click a rider to show only their passes. Overlap and pass list use full race data (not affected by filters).</p>
 
       {Object.entries(grouped).map(([cat, riders]) => (
         <div key={cat}>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat} — rank at each split</h2>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat} — rank at each split (click name to isolate passes)</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -336,10 +346,15 @@ function PositionsPassingView({
                 {riders.map((r) => {
                   const ranks = rankTableByRider[r.id] ?? [];
                   const isHl = hl != null && r.team === hl;
+                  const isSelected = selectedRiderId === r.id;
                   return (
-                    <tr key={r.id} className={`border-b border-slate-100 dark:border-slate-700 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""}`}>
+                    <tr
+                      key={r.id}
+                      className={`border-b border-slate-100 dark:border-slate-700 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-slate-700/50 ${isHl ? "bg-sky-100/60 dark:bg-sky-900/40" : ""} ${isSelected ? "ring-1 ring-sky-500 dark:ring-sky-400 bg-sky-50 dark:bg-sky-900/30" : ""}`}
+                      onClick={() => setSelectedRiderId((prev) => (prev === r.id ? null : r.id))}
+                    >
                       <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
-                      <td className={`py-1 px-1 font-medium bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : ""}`}>{r.name}</td>
+                      <td className={`py-1 px-1 font-medium bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : ""} ${isSelected ? "underline" : ""}`}>{r.name}</td>
                       <td className="py-1 px-1 truncate max-w-32 text-slate-500 bg-inherit">{r.team || "—"}</td>
                       {ranks.map((rank, i) => (
                         <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
@@ -355,14 +370,20 @@ function PositionsPassingView({
 
       <div>
         <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Passes between consecutive splits (within category)</h2>
-        {passesBySegment.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-slate-400">No passes detected between consecutive splits.</p>
+        {selectedRider && (
+          <p className="text-xs text-slate-600 dark:text-slate-300 mb-1">
+            Showing passes for <strong>{selectedRider.name}</strong> ({selectedRider.team})
+            <button type="button" onClick={() => setSelectedRiderId(null)} className="ml-2 text-sky-600 dark:text-sky-400 hover:underline">Show all</button>
+          </p>
+        )}
+        {displayedPasses.length === 0 ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">{selectedRiderId ? "No passes for this rider." : "No passes detected between consecutive splits."}</p>
         ) : (
           <ul className="text-xs space-y-1 list-disc list-inside text-slate-600 dark:text-slate-300">
-            {passesBySegment.slice(0, 80).map((p, i) => (
+            {displayedPasses.slice(0, 80).map((p, i) => (
               <li key={i}>{p.by} passed {p.passed} ({p.cat}) between {p.segFrom} and {p.segTo}</li>
             ))}
-            {passesBySegment.length > 80 && <li className="text-slate-500">… and {passesBySegment.length - 80} more</li>}
+            {displayedPasses.length > 80 && <li className="text-slate-500">… and {displayedPasses.length - 80} more</li>}
           </ul>
         )}
       </div>
@@ -675,7 +696,7 @@ function CorrelationScatter({ splits, grouped, ridersWithSplits, timingMode, hl 
   );
 }
 
-export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
+export function SplitsTab({ raceName, filtered, rawData, splits, hl }: SplitsTabProps) {
   const [timingMode, setTimingMode] = useState<TimingMode>("sector");
   const [viewMode, setViewMode] = useState<ViewMode>("splits");
   const [gapReference, setGapReference] = useState<string>("leader");
@@ -1006,7 +1027,7 @@ export function SplitsTab({ raceName, filtered, splits, hl }: SplitsTabProps) {
         <PositionsPassingView
           splits={splits}
           grouped={grouped}
-          ridersWithSplits={ridersWithSplits}
+          allRidersWithSplits={rawData.filter((r) => splits.byRiderId[r.id] != null)}
           hl={hl}
         />
       )}
