@@ -281,19 +281,42 @@ function PositionsPassingView({
     );
     if (!hasTod) return null;
     return splits.segmentLabels.map((label, segIdx) => {
-      const byCat: Record<string, number[]> = {};
+      const byCat: Record<string, { arr: number[]; grade: string }> = {};
       allRidersWithSplits.forEach((r) => {
         const tod = getTodValues(splits, r.id)[segIdx];
         if (tod == null) return;
         const c = r.categoryRaw;
-        if (!byCat[c]) byCat[c] = [];
-        byCat[c].push(tod);
+        if (!byCat[c]) byCat[c] = { arr: [], grade: r.grade };
+        byCat[c].arr.push(tod);
       });
-      const catRanges = Object.entries(byCat).map(([c, arr]) => ({ cat: c, min: Math.min(...arr), max: Math.max(...arr) }));
-      const overlappingCats = catRanges.length >= 2
-        ? [...new Set(catRanges.filter((a, i) => catRanges.some((b, j) => i !== j && a.min <= b.max && b.min <= a.max)).map((x) => x.cat))]
-        : [];
-      return { label, catRanges, overlapping: overlappingCats };
+      const catRanges = Object.entries(byCat).map(([c, { arr, grade }]) => ({
+        cat: c,
+        min: Math.min(...arr),
+        max: Math.max(...arr),
+        grade,
+      }));
+      const byGrade = _.groupBy(catRanges, "grade");
+      const waves: { grade: string; gradeLabel: string; min: number; max: number; cats: string[] }[] = [];
+      (["hs", "ms"] as const).forEach((grade) => {
+        const ranges = byGrade[grade] ?? [];
+        if (ranges.length === 0) return;
+        const sorted = [...ranges].sort((a, b) => a.min - b.min);
+        const gradeWaves: { min: number; max: number; cats: string[] }[] = [];
+        sorted.forEach(({ cat, min, max }) => {
+          const last = gradeWaves[gradeWaves.length - 1];
+          if (last && min <= last.max + 60) {
+            last.max = Math.max(last.max, max);
+            last.cats.push(cat);
+          } else {
+            gradeWaves.push({ min, max, cats: [cat] });
+          }
+        });
+        gradeWaves.forEach((w) => {
+          waves.push({ grade, gradeLabel: grade === "hs" ? "HS" : "MS", min: w.min, max: w.max, cats: [...w.cats] });
+        });
+      });
+      const passingWithinWave = waves.filter((w) => w.cats.length > 1).map((w) => `${w.gradeLabel}: ${w.cats.join(", ")}`);
+      return { label, catRanges, waves, passingWithinWave };
     });
   }, [splits, allRidersWithSplits]);
 
@@ -390,23 +413,33 @@ function PositionsPassingView({
 
       {crossCategoryOverlap != null && (
         <div>
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Where categories overlap (by clock time)</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">Segments where different categories were on course at the same time—where cross-category passing can occur.</p>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">Waves and passing (by clock time)</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+            MS and HS race on different days—passing can only occur within MS or within HS. Riders also start in waves; passing can only occur between categories in the same wave (similar clock time at that segment). Below: waves show who was on course when; passing is only possible within a wave when multiple categories share that wave.
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-600">
                   <th className="py-1 px-2 text-left">Segment</th>
-                  <th className="py-1 px-2 text-left">Categories present</th>
-                  <th className="py-1 px-2 text-left">Overlap (passing can occur)</th>
+                  <th className="py-1 px-2 text-left">Waves (clock time range → categories)</th>
+                  <th className="py-1 px-2 text-left">Passing can occur (within wave)</th>
                 </tr>
               </thead>
               <tbody>
-                {crossCategoryOverlap.map(({ label, catRanges, overlapping }) => (
+                {crossCategoryOverlap.map(({ label, waves: segWaves, passingWithinWave }) => (
                   <tr key={label} className="border-b border-slate-100 dark:border-slate-700">
-                    <td className="py-1 px-2 font-medium text-slate-800 dark:text-slate-200">{label}</td>
-                    <td className="py-1 px-2 text-slate-600 dark:text-slate-400">{catRanges.map((c) => c.cat).join(", ")}</td>
-                    <td className="py-1 px-2 text-amber-600 dark:text-amber-400">{overlapping.length ? overlapping.join(", ") : "—"}</td>
+                    <td className="py-1 px-2 font-medium text-slate-800 dark:text-slate-200 align-top">{label}</td>
+                    <td className="py-1 px-2 text-slate-600 dark:text-slate-400 align-top">
+                      {segWaves.length === 0 ? "—" : segWaves.map((w) => (
+                        <span key={w.gradeLabel + w.min} className="block mb-0.5">
+                          {w.gradeLabel} {formatTime(w.min)}–{formatTime(w.max)}: {w.cats.join(", ")}
+                        </span>
+                      ))}
+                    </td>
+                    <td className="py-1 px-2 text-amber-600 dark:text-amber-400 align-top">
+                      {passingWithinWave.length ? passingWithinWave.map((s, i) => <span key={i} className="block mb-0.5">{s}</span>) : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
