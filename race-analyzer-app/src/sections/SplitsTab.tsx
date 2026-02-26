@@ -254,23 +254,36 @@ function PositionsPassingView({
 
   const passesBySegment = useMemo(() => {
     const out: { segFrom: string; segTo: string; cat: string; passed: string; by: string; passedId: string; byId: string }[] = [];
+    const labels = splits.segmentLabels;
     Object.entries(groupedAll).forEach(([cat, riders]) => {
       const ranks = rankAtSplitByRiderAll;
-      for (let s = 0; s < splits.segmentLabels.length - 1; s++) {
-        const fromRank = splits.segmentLabels[s];
-        const toRank = splits.segmentLabels[s + 1];
-        riders.forEach((a) => {
-          riders.forEach((b) => {
-            if (a.id === b.id) return;
-            const raPrev = ranks[a.id]?.[s];
-            const raNext = ranks[a.id]?.[s + 1];
-            const rbPrev = ranks[b.id]?.[s];
-            const rbNext = ranks[b.id]?.[s + 1];
-            if (raPrev == null || raNext == null || rbPrev == null || rbNext == null) return;
-            if (raPrev > rbPrev && raNext < rbNext) out.push({ segFrom: fromRank!, segTo: toRank!, cat, passed: b.name, by: a.name, passedId: b.id, byId: a.id });
-          });
+      riders.forEach((a) => {
+        riders.forEach((b) => {
+          if (a.id === b.id) return;
+          const ra = ranks[a.id] ?? [];
+          const rb = ranks[b.id] ?? [];
+          let lastBehind: number | null = null;
+          for (let i = 0; i < labels.length; i++) {
+            const rai = ra[i];
+            const rbi = rb[i];
+            if (rai == null || rbi == null) continue;
+            if (rai > rbi) {
+              lastBehind = i;
+            } else if (rai < rbi && lastBehind != null) {
+              out.push({
+                segFrom: labels[lastBehind]!,
+                segTo: labels[i]!,
+                cat,
+                passed: b.name,
+                by: a.name,
+                passedId: b.id,
+                byId: a.id,
+              });
+              lastBehind = null;
+            }
+          }
         });
-      }
+      });
     });
     return out;
   }, [splits, groupedAll, rankAtSplitByRiderAll]);
