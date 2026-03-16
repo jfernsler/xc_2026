@@ -572,15 +572,16 @@ function CourseAndElevation({
     const elevChange = e1 - e0;
     const isMiles = distanceUnit === "mi";
     const runSameUnit = isMiles ? dist * 5280 : dist;
-    const riseSameUnit = elevChange;
-    const avgGradePct = runSameUnit !== 0 ? (riseSameUnit / runSameUnit) * 100 : 0;
-    return {
-      distance: dist,
-      distanceUnit,
-      elevChange,
-      elevationUnit,
-      avgGradePct,
-    };
+    const avgGradePct = runSameUnit !== 0 ? (elevChange / runSameUnit) * 100 : 0;
+    const sliced = sliceElevationsToRange(elevations, selectedRange.distMin, selectedRange.distMax);
+    let climbing = 0;
+    let descending = 0;
+    for (let i = 1; i < sliced.length; i++) {
+      const delta = sliced[i]![1] - sliced[i - 1]![1];
+      if (delta > 0) climbing += delta;
+      else if (delta < 0) descending += -delta;
+    }
+    return { distance: dist, distanceUnit, elevChange, elevationUnit, avgGradePct, climbing, descending };
   }, [selectedRange, elevations, distanceUnit, elevationUnit]);
   const startPoint = coords.length > 0 ? project(coords[0]![0], coords[0]![1]) : null;
 
@@ -839,14 +840,22 @@ function CourseAndElevation({
           <span>{elevData.distMax.toFixed(2)} {distanceUnit}</span>
         </div>
         {selectionStats && (
-          <div className="mt-2 px-2 py-1.5 rounded bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700 text-[11px] text-slate-700 dark:text-slate-200">
-            <span className="font-medium text-sky-700 dark:text-sky-300">Selection:</span>
-            {" "}
-            {selectionStats.distance.toFixed(3)} {selectionStats.distanceUnit}
-            {" · "}
-            {selectionStats.elevChange >= 0 ? "+" : ""}{selectionStats.elevChange.toFixed(0)} {selectionStats.elevationUnit}
-            {" · "}
-            avg grade {selectionStats.avgGradePct >= 0 ? "" : "−"}{Math.abs(selectionStats.avgGradePct).toFixed(1)}%
+          <div className="mt-2 px-2 py-1.5 rounded bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700 text-[11px] text-slate-700 dark:text-slate-200 flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>
+              <span className="font-medium text-sky-700 dark:text-sky-300">Selection:</span>
+              {" "}{selectionStats.distance.toFixed(3)} {selectionStats.distanceUnit}
+            </span>
+            <span>
+              <span className="font-medium">Net:</span>
+              {" "}{selectionStats.elevChange >= 0 ? "+" : ""}{selectionStats.elevChange.toFixed(0)} {selectionStats.elevationUnit}
+              {" · "}avg grade {selectionStats.avgGradePct >= 0 ? "" : "−"}{Math.abs(selectionStats.avgGradePct).toFixed(1)}%
+            </span>
+            <span className="text-emerald-700 dark:text-emerald-400">
+              ↑ {selectionStats.climbing.toFixed(0)} {selectionStats.elevationUnit} climbing
+            </span>
+            <span className="text-red-600 dark:text-red-400">
+              ↓ {selectionStats.descending.toFixed(0)} {selectionStats.elevationUnit} descending
+            </span>
           </div>
         )}
       </div>
