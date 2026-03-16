@@ -460,6 +460,41 @@ def _convert_courses_to_unified_units(courses: list, event_units: str) -> tuple:
     return converted, distance_unit, elevation_unit
 
 
+def sync_maps_manifest(maps_dir: Optional[Path] = None) -> list[dict]:
+    """Sync manifest.json with map JSON files in maps_dir. Reads metadata from each file."""
+    maps_dir = maps_dir or MAPS_DIR
+    manifest_path = maps_dir / "manifest.json"
+    existing: list[dict] = []
+    if manifest_path.exists():
+        try:
+            raw = json.loads(manifest_path.read_text())
+            existing = raw if isinstance(raw, list) else []
+        except (json.JSONDecodeError, OSError):
+            existing = []
+
+    by_map_id = {e["map_id"]: e for e in existing if "map_id" in e}
+
+    for path in sorted(maps_dir.glob("*.json")):
+        if path.name == "manifest.json":
+            continue
+        try:
+            data = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        mid = data.get("map_id")
+        eid = data.get("event_id")
+        name = data.get("eventName")
+        if mid is None or eid is None:
+            continue
+        if mid not in by_map_id:
+            by_map_id[mid] = {"event_id": eid, "map_id": mid, "name": name, "file": path.name}
+
+    out = sorted(by_map_id.values(), key=lambda e: e.get("map_id", 0))
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(out, indent=2) + "\n")
+    return out
+
+
 def scrape_map(event_id: int, map_id: int, output_dir: str) -> Optional[dict]:
     print(f"  map_id={map_id} (event_id={event_id})...")
     ev = get_event(map_id)
@@ -570,11 +605,9 @@ def run(
                 maps_manifest.append(entry)
             elif map_id in existing_by_map_id:
                 maps_manifest.append(existing_by_map_id[map_id])
-        if maps_manifest:
-            maps_dir.mkdir(parents=True, exist_ok=True)
-            with open(maps_manifest_path, "w") as f:
-                json.dump(maps_manifest, f, indent=2)
-            print(f"  Wrote {maps_manifest_path} ({len(maps_manifest)} total)")
+        maps_dir.mkdir(parents=True, exist_ok=True)
+        maps_manifest = sync_maps_manifest(maps_dir)
+        print(f"  Wrote {maps_manifest_path} ({len(maps_manifest)} total)")
 
     return races_manifest, maps_manifest
 

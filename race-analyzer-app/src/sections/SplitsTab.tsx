@@ -291,26 +291,18 @@ function PositionsPassingView({
     });
   }, [splits, allRidersWithSplits]);
 
-  const rankTableByRider = useMemo(() => {
-    const byRider: Record<string, (number | null)[]> = {};
-    Object.entries(grouped).forEach(([, riders]) => {
-      const n = splits.segmentLabels.length;
-      riders.forEach((r) => {
-        const sortedBySplit = _.range(n).map((s) =>
-          riders
-            .map((rr) => ({ rr, v: getSegmentValues(splits, rr.id, "chip")[s] }))
-            .filter((x): x is { rr: Rider; v: number } => x.v != null)
-            .sort((a, b) => a.v - b.v)
-        );
-        const ranks = sortedBySplit.map((order) => {
-          const idx = order.findIndex((x) => x.rr.id === r.id);
-          return idx === -1 ? null : idx + 1;
-        });
-        byRider[r.id] = ranks;
-      });
+  const passCountByRider = useMemo(() => {
+    const out: Record<string, { made: number; received: number; net: number }> = {};
+    passesBySegment.forEach((p) => {
+      if (!out[p.byId]) out[p.byId] = { made: 0, received: 0, net: 0 };
+      out[p.byId].made++;
+      out[p.byId].net++;
+      if (!out[p.passedId]) out[p.passedId] = { made: 0, received: 0, net: 0 };
+      out[p.passedId].received++;
+      out[p.passedId].net--;
     });
-    return byRider;
-  }, [splits, grouped]);
+    return out;
+  }, [passesBySegment]);
 
   const displayedPasses = useMemo(() => {
     const list = selectedRiderId
@@ -348,7 +340,7 @@ function PositionsPassingView({
 
   return (
     <div className="space-y-6">
-      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time). Click a rider to show only their passes. ▲ = rider made pass, ▼ = rider was passed. Overlap and pass list use full race data (not affected by filters).</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">Rank at each split (by chip time, overall within category — not affected by team filter). Passes = net passes made (positive = passed others, negative = was passed). Click a rider to show only their passes. ▲ = rider made pass, ▼ = rider was passed.</p>
 
       {Object.entries(grouped).map(([cat, riders]) => {
         const riderPassesInCat = selectedRiderId
@@ -365,6 +357,7 @@ function PositionsPassingView({
                     <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-900">P</th>
                     <th className="py-1 px-1 text-left">Name</th>
                     <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
+                    <th className="py-1 px-1 text-right whitespace-nowrap">Passes</th>
                     {splits.segmentLabels.map((l) => (
                       <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
                     ))}
@@ -372,7 +365,9 @@ function PositionsPassingView({
                 </thead>
                 <tbody>
                   {riders.map((r) => {
-                    const ranks = rankTableByRider[r.id] ?? [];
+                    const ranks = rankAtSplitByRiderAll[r.id] ?? [];
+                    const passes = passCountByRider[r.id];
+                    const net = passes?.net ?? 0;
                     const isHl = hl != null && r.team === hl;
                     const isSelected = selectedRiderId === r.id;
                     return (
@@ -384,7 +379,10 @@ function PositionsPassingView({
                         <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
                         <td className={`py-1 px-1 font-medium bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : ""} ${isSelected ? "underline" : ""}`}>{r.name}</td>
                         <td className="py-1 px-1 truncate max-w-32 text-slate-500 bg-inherit">{r.team || "—"}</td>
-                        {ranks.map((rank, i) => (
+                        <td className={`py-1 px-1 text-right font-mono ${net > 0 ? "text-emerald-600 dark:text-emerald-400" : net < 0 ? "text-red-600 dark:text-red-400" : "text-slate-400 dark:text-slate-500"}`}>
+                          {passes ? (net > 0 ? `+${net}` : `${net}`) : "—"}
+                        </td>
+                        {ranks.map((rank: number | null, i: number) => (
                           <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
                         ))}
                       </tr>
