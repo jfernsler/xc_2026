@@ -114,6 +114,9 @@ function GapToRefView({
           const ref = refRider && refRider.categoryRaw === cat ? refRider : leaderByCategory[cat];
           if (!ref) return null;
           const refChip = getSegmentValues(splits, ref.id, "chip");
+          const activeIndices = splits.segmentLabels.map((_, s) => s).filter((s) =>
+            riders.some((r) => getSegmentValues(splits, r.id, "chip")[s] != null)
+          );
           return (
             <div key={cat}>
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">
@@ -126,8 +129,8 @@ function GapToRefView({
                       <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-900">P</th>
                       <th className="py-1 px-1 text-left sticky left-8 bg-slate-50 dark:bg-slate-900">Name</th>
                       <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
-                      {splits.segmentLabels.map((l) => (
-                        <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
+                      {activeIndices.map((i) => (
+                        <th key={i} className="py-1 px-1 text-right whitespace-nowrap">{splits.segmentLabels[i]}</th>
                       ))}
                       <th className="py-1 px-1 text-right whitespace-nowrap border-l border-slate-200 dark:border-slate-600">Finish</th>
                     </tr>
@@ -150,7 +153,8 @@ function GapToRefView({
                           <td className="py-1 px-1 font-mono sticky left-0 bg-inherit">{r.place}</td>
                           <td className={`py-1 px-1 font-medium truncate max-w-32 bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"}`}>{r.name}</td>
                           <td className="py-1 px-1 truncate max-w-32 text-slate-500 dark:text-slate-400">{r.team || "—"}</td>
-                          {chip.map((v, i) => {
+                          {activeIndices.map((i) => {
+                            const v = chip[i];
                             const refV = refChip[i];
                             const gap = v != null && refV != null ? v - refV : null;
                             const cellClass =
@@ -364,6 +368,10 @@ function PositionsPassingView({
           ? displayedPasses.filter((p) => p.cat === cat)
           : []; // already sorted chronologically via displayedPasses
         const selectedInThisCat = selectedRiderId && riders.some((r) => r.id === selectedRiderId);
+        const allCatRiders = groupedAll[cat] ?? riders;
+        const activeIndices = splits.segmentLabels.map((_, s) => s).filter((s) =>
+          allCatRiders.some((r) => getSegmentValues(splits, r.id, "chip")[s] != null)
+        );
         return (
           <div key={cat}>
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat} — rank at each split (click name to isolate passes)</h2>
@@ -375,8 +383,8 @@ function PositionsPassingView({
                     <th className="py-1 px-1 text-left">Name</th>
                     <th className="py-1 px-1 text-left max-w-32 truncate">Team</th>
                     <th className="py-1 px-1 text-right whitespace-nowrap">Passes</th>
-                    {splits.segmentLabels.map((l) => (
-                      <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
+                    {activeIndices.map((i) => (
+                      <th key={i} className="py-1 px-1 text-right whitespace-nowrap">{splits.segmentLabels[i]}</th>
                     ))}
                     <th className="py-1 px-1 text-right whitespace-nowrap border-l border-slate-200 dark:border-slate-600">Finish</th>
                   </tr>
@@ -400,11 +408,11 @@ function PositionsPassingView({
                         <td className={`py-1 px-1 text-right font-mono ${net > 0 ? "text-emerald-600 dark:text-emerald-400" : net < 0 ? "text-red-600 dark:text-red-400" : "text-slate-400 dark:text-slate-500"}`}>
                           {passes ? (net > 0 ? `+${net}` : `${net}`) : "—"}
                         </td>
-                        {ranks.slice(0, splits.segmentLabels.length).map((rank: number | null, i: number) => (
-                          <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
+                        {activeIndices.map((i) => (
+                          <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{ranks[i] ?? "—"}</td>
                         ))}
                         <td className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400 border-l border-slate-100 dark:border-slate-700">
-                          {ranks[splits.segmentLabels.length] ?? "—"}
+                          {r.place < 999 ? r.place : "—"}
                         </td>
                       </tr>
                     );
@@ -528,7 +536,11 @@ function FadeView({
       <p className="text-xs text-slate-500 dark:text-slate-400">
         Same stretch across laps for every segment: L1S1 vs L2S1, L1S2 vs L2S2, etc. Δ = lap-to-lap change (red = slower/fade, green = faster). For 3-lap categories, L2→L3 per segment is included.
       </p>
-      {Object.entries(grouped).map(([cat, riders]) => (
+      {Object.entries(grouped).map(([cat, riders]) => {
+        const activeSegmentGroups = segmentGroups.filter(({ indices }) =>
+          riders.some((r) => indices.some((i) => getSegmentValues(splits, r.id, "sector")[i] != null))
+        );
+        return (
         <div key={cat}>
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-1">{cat}</h2>
           <div className="overflow-x-auto">
@@ -538,7 +550,7 @@ function FadeView({
                   <th className="py-1 px-1 text-left sticky left-0 bg-slate-50 dark:bg-slate-800/80">P</th>
                   <th className="py-1 px-1 text-left sticky left-6 max-w-28 truncate bg-slate-50 dark:bg-slate-800/80">Name</th>
                   <th className="py-1 px-1 text-left max-w-24 truncate bg-slate-50 dark:bg-slate-800/80">Team</th>
-                  {segmentGroups.map(({ splitKey, labels, indices }) => (
+                  {activeSegmentGroups.map(({ splitKey, labels, indices }) => (
                     <th key={splitKey} className="py-1 px-1 text-right border-l border-slate-200 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-700/40 whitespace-nowrap">
                       <span className="font-semibold text-slate-600 dark:text-slate-300">{splitKey}</span>
                       <div className="text-[10px] font-normal mt-0.5 flex flex-wrap gap-x-0.5 justify-end">
@@ -567,7 +579,7 @@ function FadeView({
                       <td className="py-1 px-1 font-mono text-slate-700 dark:text-slate-300 sticky left-0 bg-inherit">{r.place}</td>
                       <td className={`py-1 px-1 font-medium truncate max-w-28 sticky left-6 bg-inherit ${isHl ? "text-sky-600 dark:text-sky-400" : "text-slate-800 dark:text-slate-200"}`}>{r.name}</td>
                       <td className="py-1 px-1 truncate max-w-24 text-slate-500 dark:text-slate-400">{r.team || "—"}</td>
-                      {segmentGroups.map(({ splitKey, indices }) => {
+                      {activeSegmentGroups.map(({ splitKey, indices }) => {
                         const times = indices.map((i) => sector[i] ?? null);
                         const d12 = times[0] != null && times[1] != null ? times[1] - times[0] : null;
                         const d23 = indices.length >= 3 && times[1] != null && times[2] != null ? times[2] - times[1] : null;
@@ -603,7 +615,8 @@ function FadeView({
             </table>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
