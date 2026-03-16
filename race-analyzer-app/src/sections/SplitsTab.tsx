@@ -129,12 +129,19 @@ function GapToRefView({
                       {splits.segmentLabels.map((l) => (
                         <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
                       ))}
+                      <th className="py-1 px-1 text-right whitespace-nowrap border-l border-slate-200 dark:border-slate-600">Finish</th>
                     </tr>
                   </thead>
                   <tbody>
                     {riders.map((r) => {
                       const chip = getSegmentValues(splits, r.id, "chip");
                       const isHl = hl != null && r.team === hl;
+                      const finishGap = r.totalTime != null && ref.totalTime != null ? r.totalTime - ref.totalTime : null;
+                      const finishClass = finishGap != null
+                        ? finishGap > 0 ? "text-red-600 dark:text-red-400"
+                        : finishGap < 0 ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-slate-500"
+                        : "text-slate-400";
                       return (
                         <tr
                           key={r.id}
@@ -160,6 +167,9 @@ function GapToRefView({
                               </td>
                             );
                           })}
+                          <td className={`py-1 px-1 text-right font-mono border-l border-slate-100 dark:border-slate-700 ${finishClass}`}>
+                            {finishGap != null ? formatDelta(finishGap) : "—"}
+                          </td>
                         </tr>
                       );
                     })}
@@ -192,8 +202,8 @@ function PositionsPassingView({
 
   const rankAtSplitByRiderAll = useMemo(() => {
     const byRider: Record<string, number[]> = {};
+    const n = splits.segmentLabels.length;
     Object.entries(groupedAll).forEach(([_, riders]) => {
-      const n = splits.segmentLabels.length;
       riders.forEach((r) => {
         if (!byRider[r.id]) byRider[r.id] = [];
       });
@@ -206,13 +216,20 @@ function PositionsPassingView({
           byRider[x.r.id][s] = rank + 1;
         });
       }
+      // Finish rank at index n
+      const withFinish = riders
+        .filter((r) => r.totalTime != null)
+        .sort((a, b) => a.totalTime! - b.totalTime!);
+      withFinish.forEach((r, rank) => {
+        byRider[r.id][n] = rank + 1;
+      });
     });
     return byRider;
   }, [splits, groupedAll]);
 
   const passesBySegment = useMemo(() => {
     const out: { segFrom: string; segTo: string; cat: string; passed: string; by: string; passedId: string; byId: string }[] = [];
-    const labels = splits.segmentLabels;
+    const labels = [...splits.segmentLabels, "Finish"];
     Object.entries(groupedAll).forEach(([cat, riders]) => {
       const ranks = rankAtSplitByRiderAll;
       riders.forEach((a) => {
@@ -308,7 +325,7 @@ function PositionsPassingView({
     const list = selectedRiderId
       ? passesBySegment.filter((p) => p.byId === selectedRiderId || p.passedId === selectedRiderId)
       : passesBySegment;
-    const labels = splits.segmentLabels;
+    const labels = [...splits.segmentLabels, "Finish"];
     return [...list].sort((a, b) => {
       const toA = labels.indexOf(a.segTo);
       const toB = labels.indexOf(b.segTo);
@@ -361,6 +378,7 @@ function PositionsPassingView({
                     {splits.segmentLabels.map((l) => (
                       <th key={l} className="py-1 px-1 text-right whitespace-nowrap">{l}</th>
                     ))}
+                    <th className="py-1 px-1 text-right whitespace-nowrap border-l border-slate-200 dark:border-slate-600">Finish</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -382,9 +400,12 @@ function PositionsPassingView({
                         <td className={`py-1 px-1 text-right font-mono ${net > 0 ? "text-emerald-600 dark:text-emerald-400" : net < 0 ? "text-red-600 dark:text-red-400" : "text-slate-400 dark:text-slate-500"}`}>
                           {passes ? (net > 0 ? `+${net}` : `${net}`) : "—"}
                         </td>
-                        {ranks.map((rank: number | null, i: number) => (
+                        {ranks.slice(0, splits.segmentLabels.length).map((rank: number | null, i: number) => (
                           <td key={i} className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400">{rank ?? "—"}</td>
                         ))}
+                        <td className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400 border-l border-slate-100 dark:border-slate-700">
+                          {ranks[splits.segmentLabels.length] ?? "—"}
+                        </td>
                       </tr>
                     );
                   })}
@@ -529,6 +550,9 @@ function FadeView({
                       </div>
                     </th>
                   ))}
+                  <th className="py-1 px-1 text-right border-l border-slate-200 dark:border-slate-600 bg-slate-100/80 dark:bg-slate-700/40 whitespace-nowrap">
+                    <span className="font-semibold text-slate-600 dark:text-slate-300">Total</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -569,6 +593,9 @@ function FadeView({
                           </td>
                         );
                       })}
+                      <td className="py-1 px-1 text-right font-mono text-slate-600 dark:text-slate-400 border-l border-slate-100 dark:border-slate-700">
+                        {r.totalTime != null ? formatTime(r.totalTime) : "—"}
+                      </td>
                     </tr>
                   );
                 })}
