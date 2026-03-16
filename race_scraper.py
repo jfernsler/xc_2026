@@ -300,11 +300,11 @@ class RaceResultScraper:
         n = len(pids)
         pid_to_splits = {}
         for i, pid in enumerate(pids):
-            if (i + 1) % 50 == 0 or i == 0:
-                print(f"  Fetching splits {i + 1}/{n}...")
+            print(f"  Fetching splits {i + 1}/{n}...", end="\r", flush=True)
             data = self.get_participant_splits(pid)
             pid_to_splits[pid] = data
             if i == 0:
+                print()  # newline after first progress line
                 raw_names = [sp.get("Name") for sp in getattr(self, "_last_splits_raw", [])]
                 print(f"  Splits API returned (Names): {raw_names}")
                 if data:
@@ -313,6 +313,7 @@ class RaceResultScraper:
                         cols_preview += f", ... (+{len(data) - 20} more)"
                     print(f"  Capture columns (first participant): {cols_preview}")
             time.sleep(1.1)
+        print(f"  Fetching splits {n}/{n}... done")  # final newline/confirmation
         all_keys = set()
         for data in pid_to_splits.values():
             if data:
@@ -580,8 +581,9 @@ def run(
 
 # --- Config: event_id / map_id pairings (map_id None = no map) -----------------
 EVENTS = [
-    {"event_id": 376410, "map_id": 16},   # Beach to Boulders 2026
-    {"event_id": 383847, "map_id": 17},   # Vail Lake Challenge 2026
+    #{"event_id": 376410, "map_id": 16},   # Beach to Boulders 2026
+    #{"event_id": 383847, "map_id": 17},   # Vail Lake Challenge 2026
+    {"event_id": 387799, "map_id": 18},   # Cachuma 2026
     # {"event_id": 123456, "map_id": None},  # Example: race with no map
 ]
 # --------------------------------------------------------------------------------
