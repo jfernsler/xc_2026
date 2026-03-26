@@ -16,5 +16,11 @@
     "map_id": 18,
     "name": "Cachuma 2026",
     "file": "Cachuma_2026_18.json"
+  },
+  {
+    "event_id": 389743,
+    "map_id": 19,
+    "name": "Victory at Vail 2026",
+    "file": "Victory_at_Vail_2026_19.json"
   }
 ]
