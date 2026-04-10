@@ -617,7 +617,8 @@ EVENTS = [
     # {"event_id": 376410, "map_id": 16},   # Beach to Boulders 2026
     # {"event_id": 383847, "map_id": 17},   # Vail Lake Challenge 2026
     # {"event_id": 387799, "map_id": 18},   # Cachuma 2026
-    {"event_id": 389743, "map_id": 19},   # Victory at Vail 2026
+    # {"event_id": 389743, "map_id": 19},   # Victory at Vail 2026
+    {"event_id": 392174, "map_id": 20},   # keysville 2026
     # {"event_id": 123456, "map_id": None},  # Example: race with no map
 ]
 # --------------------------------------------------------------------------------

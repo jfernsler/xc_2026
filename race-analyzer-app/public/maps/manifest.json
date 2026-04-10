@@ -22,5 +22,11 @@
     "map_id": 19,
     "name": "Victory at Vail 2026",
     "file": "Victory_at_Vail_2026_19.json"
+  },
+  {
+    "event_id": 392174,
+    "map_id": 20,
+    "name": "Finals 2026",
+    "file": "Finals_2026_20.json"
   }
 ]
